@@ -20,7 +20,7 @@
 ### 安装框架
 
 ```bash
-pip install hello-agents
+pip install clear-agent
 ```
 
 ### 最简单的自定义工具
@@ -566,22 +566,3 @@ class ComposeTool(Tool):
 - [Skills 知识外化](./skills-usage-guide.md) - Skills 系统集成
 
 ---
-
-## 🤝 贡献你的工具
-
-如果你开发了通用的工具，欢迎贡献到 ClearAgent 框架：
-
-1. Fork 项目仓库
-2. 在 `clear_agent/tools/builtin/` 添加你的工具
-3. 编写测试和文档
-4. 提交 Pull Request
-
----
-
-## 📞 获取帮助
-
-- GitHub Issues: https://github.com/your-repo/hello-agents/issues
-- 文档: https://hello-agents.readthedocs.io
-- 社区讨论: https://github.com/your-repo/hello-agents/discussions
-
-
