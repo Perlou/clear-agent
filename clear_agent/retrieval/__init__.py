@@ -36,7 +36,14 @@ from .rag import (
     create_document,
     load_text_file,
 )
-from .storage import DocumentStore, SQLiteDocumentStore
+from .storage import (
+    DEFAULT_COLLECTION,
+    QDRANT_AVAILABLE,
+    DocumentStore,
+    QdrantConnectionManager,
+    QdrantVectorStore,
+    SQLiteDocumentStore,
+)
 
 __all__ = [
     # embeddings
@@ -58,4 +65,8 @@ __all__ = [
     # storage
     "DocumentStore",
     "SQLiteDocumentStore",
+    "QdrantVectorStore",
+    "QdrantConnectionManager",
+    "QDRANT_AVAILABLE",
+    "DEFAULT_COLLECTION",
 ]

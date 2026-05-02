@@ -31,6 +31,9 @@ anthropic = ["anthropic>=0.20.0"]
 retrieval = [
     "scikit-learn>=1.0.0",  # TFIDFEmbedding 兜底
 ]
+retrieval-qdrant = [
+    "qdrant-client>=1.6.0",  # QdrantVectorStore（β 阶段移植）
+]
 rag = [
     "sentence-transformers>=2.2.0",
     "transformers>=4.20.0",
