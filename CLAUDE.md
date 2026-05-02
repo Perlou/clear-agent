@@ -6,7 +6,12 @@
 
 ## 项目概览
 
-**ClearAgent v1.0.0** —— 基于 OpenAI 原生 API 构建的生产级多智能体框架（Python 3.10+），围绕「上下文工程 + 工具响应协议 + 子代理机制」三大主线，集成 16 项核心工程化能力。
+**ClearAgent v2.0.0a1** —— 基于 OpenAI 原生 API 构建的生产级多智能体框架（Python 3.10+）。
+
+- **1.x 主线**：上下文工程 + 工具响应协议 + 子代理机制
+- **2.0 主线**：StateGraph + Checkpointer + Human-in-the-Loop + 结构化输出 + Eval-harness + Retrieval
+
+100% 向后兼容 1.x；`agent.run()` 老入口、`PlanAndSolveAgent` 别名、所有顶层导出全部保留。
 
 - **包名**：`clear_agent`
 - **作者**：Perlou
@@ -19,16 +24,25 @@
 clear-agent/
 ├── clear_agent/          # 主包
 │   ├── core/             # Agent 基类、LLM 适配、Config、SessionStore、生命周期
+│   │   ├── graph.py            # 🆕 2.0 StateGraph + CompiledGraph + reducers
+│   │   ├── checkpoint.py       # 🆕 2.0 BaseCheckpointer + Memory/JsonFile/Sqlite
+│   │   ├── interrupt.py        # 🆕 2.0 interrupt() + GraphPaused
+│   │   └── structured.py       # 🆕 2.0 StructuredLLM
 │   ├── agents/           # 4 种 Agent 范式 + 子代理工厂
+│   │   └── _*_graph.py         # 🆕 2.0 build_react/simple/reflection/plan_solve_graph
+│   ├── hitl/             # 🆕 2.0 HITL patterns (Approval/Edit/ToolValidation)
+│   ├── eval/             # 🆕 2.0 Dataset / Evaluator / run_eval
+│   ├── retrieval/        # 🆕 2.0 Embeddings + SQLiteDocumentStore (移植自 AntonAgents)
 │   ├── context/          # 上下文工程：ContextBuilder（GSSC）/ History / Truncator / TokenCounter
 │   ├── tools/            # 工具系统 + 内置工具（calculator/file/todowrite/devlog/task/skill）
 │   ├── observability/    # TraceLogger（JSONL + HTML）
 │   ├── skills/           # Skills 知识外化加载器
 │   └── version.py
 ├── skills/               # 18 个 Skill 包（pdf、docx、xlsx、ASR、TTS、VLM、web-search…）
-├── tests/                # 17 个 pytest 测试文件
-├── examples/             # async_agent_demo.py
-├── docs/                 # 16 篇专项指南
+├── tests/                # 460+ pytest 测试
+├── examples/             # async_agent_demo.py · rag_hello_world.py
+├── project_docs/         # 🆕 2.0 设计 spec（00-overview … 07-anton-port）
+├── docs/                 # 16+ 篇专项指南（含 2.0 quickstart）
 ├── pyproject.toml        # 构建/工具配置（black、isort、pytest、mypy）
 ├── requirements.txt      # 运行依赖
 └── .env.example          # 环境变量模板
@@ -87,6 +101,49 @@ clear-agent/
 | Todo | `memory/todos/` | `todowrite_persistence_dir` |
 | DevLog | `memory/devlogs/` | `devlog_persistence_dir` |
 | Tool 完整输出 | `tool-output/` | `tool_output_dir` |
+| 🆕 Eval 报告 | `memory/eval/<run_id>/` | `eval_output_dir`（runner 入参） |
+| 🆕 Sqlite Checkpoint | `memory/runs.db`（约定） | `SqliteCheckpointer(path=...)` |
+
+> `memory/` 和 `tool-output/` 已加入 `.gitignore`（运行时产物，不入库）。
+
+### 8. 🆕 2.0 StateGraph + Checkpoint
+
+- **核心抽象**：`StateGraph[State]`（`add_node` / `add_edge` / `add_conditional_edges`）→ `CompiledGraph`（`invoke` / `ainvoke` / `stream` / `resume` / `get_state` / `draw_mermaid`）
+- **Reducer**：字段级合并 `add_messages` / `append_list` / `merge_dict` / 自定义 fn
+- **Checkpointer**：每节点写一份快照（thread_id + checkpoint_id + parent + state + next_nodes + metadata）
+- **三个后端**：`InMemoryCheckpointer` / `JsonFileCheckpointer`（兼容老 `memory/sessions/`）/ `SqliteCheckpointer`
+- **接入方式**：所有内置 Agent 暴露 `as_graph(checkpointer=...)`，旧 `agent.run()` 入口不变
+
+### 9. 🆕 2.0 Human-in-the-Loop
+
+- 节点内 `interrupt(payload)` → 抛 `GraphInterrupt` → CompiledGraph 捕获 → 写 `source=interrupt` 的 ckpt → 抛 `GraphPaused`
+- 调用方捕获 `GraphPaused` → 展示给用户 → `compiled.resume(thread_id, value=...)` 注入决策 → 节点函数重入，`interrupt()` 直接返回 value
+- 同节点多个 `interrupt()` 按 resume 顺序回放历史值
+- 内置三种模式：`Approval` / `Edit` / `ToolValidation`（`clear_agent/hitl/patterns.py`）
+
+### 10. 🆕 2.0 结构化输出
+
+- `llm.with_structured_output(schema, method="auto"|"function_calling"|"json_mode"|"json_schema", include_raw=False, max_retries=2)`
+- `auto` 自动按 model + base_url 选 method（OpenAI gpt-4o+ → `json_schema`，其他 → `function_calling`）
+- 失败重试：把校验错误追加到对话让 LLM 修正
+- `include_raw=True` 模式下解析失败不抛异常，返回 `{parsed, raw, parsing_error}`
+- 在 eval-harness 里被 `LLMAsJudge` 复用（让评分本身也是结构化输出）
+
+### 11. 🆕 2.0 Eval-harness
+
+- `Dataset.from_jsonl/from_list` + `filter/sample/take/[:]`
+- 4 种 Evaluator：`ExactMatch` / `Contains` / `LLMAsJudge`（依赖 `with_structured_output`）/ `Custom(fn)`
+- `run_eval(target, ds, evaluator, parallel=4, output_dir=...)` → 输出 `report.md` + `results.jsonl`
+- `target` 支持 `CompiledGraph` 与 `callable`；`extract_predicted` 默认从 `final_answer` / `messages` 抽取
+- 单条 example 抛异常不打断整批；按 tag 聚合 + top failures 排序
+
+### 12. 🆕 2.0 Retrieval（spike）
+
+- `EmbeddingModel` 抽象 + 三种实现：`LocalTransformerEmbedding`（sentence-transformers / hf）/ `DashScopeEmbedding`（OpenAI 兼容 REST 优先）/ `TFIDFEmbedding`（sklearn 兜底）
+- 工厂带回退：`create_embedding_model_with_fallback(preferred, ...)`
+- 全局单例：`get_text_embedder()` / `get_dimension()` / `refresh_embedder()`
+- `SQLiteDocumentStore`：同路径单例 + 线程本地连接 + `:memory:` 支持
+- 全部移植自 AntonAgents（License 一致 CC-BY-NC-SA-4.0），按 `project_docs/07` SOP 改 namespace + 异常 + 加 license 标注
 
 ## 配置与环境变量
 
@@ -131,7 +188,31 @@ python examples/async_agent_demo.py
 6. **向后兼容** → `_history` property、`PlanAndSolveAgent` 别名等保留，禁止破坏。
 7. **代码风格**：`black` line-length=88、`isort` profile=black、`mypy` 严格模式（`disallow_untyped_defs=true`）。
 
-## 文档索引（`docs/`）
+## 文档索引
+
+### 2.0 设计 spec（`project_docs/`）
+
+| 文件 | 主题 |
+|------|------|
+| `00-overview.md` | 整体决策与差距分析 |
+| `01-graph-architecture.md` | StateGraph + Reducer 设计 |
+| `02-checkpoint-and-resume.md` | Checkpointer 三后端设计 |
+| `03-hitl-guide.md` | interrupt/resume 与 HITL patterns |
+| `04-structured-output.md` | with_structured_output 三种 method |
+| `05-eval-harness.md` | Dataset / Evaluator / Runner |
+| `06-migration-1.x-to-2.x.md` | 迁移路径 |
+| `07-anton-agents-port.md` | AntonAgents 移植 SOP |
+
+### 2.0 用户向 quickstart（`docs/`）
+
+| 主题 | 文件 |
+|------|------|
+| StateGraph 上手 | `graph-architecture.md` |
+| 结构化输出 | `structured-output.md` |
+| Eval-harness | `eval-harness.md` |
+| 1.x→2.x 迁移 | `migration-1.x-to-2.x.md` |
+
+### 1.x 专项（`docs/`）
 
 | 主题 | 文件 |
 |------|------|

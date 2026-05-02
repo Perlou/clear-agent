@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clear-agent"
-version = "1.0.0"
-description = "生产级多智能体框架 - 工具响应协议、上下文工程、会话持久化、子代理机制、乐观锁、熔断器、Skills知识外化等16项核心能力"
+version = "2.0.0a1"
+description = "生产级多智能体框架 - StateGraph + Checkpoint + HITL + 结构化输出 + Eval-harness + 工具响应协议 + 上下文工程 + Skills"
 readme = "README.md"
 license = {text = "CC-BY-NC-SA-4.0"}
 authors = [
@@ -27,6 +27,18 @@ dependencies = [
 [project.optional-dependencies]
 gemini = ["google-genai>=1.0.0"]
 anthropic = ["anthropic>=0.20.0"]
+# 2.0 新增：检索 / RAG（按需安装）
+retrieval = [
+    "scikit-learn>=1.0.0",  # TFIDFEmbedding 兜底
+]
+rag = [
+    "sentence-transformers>=2.2.0",
+    "transformers>=4.20.0",
+    "torch>=1.12.0",
+]
+dashscope = [
+    "dashscope>=1.10.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/Perlou/clear-agent"
