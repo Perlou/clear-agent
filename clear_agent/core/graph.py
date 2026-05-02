@@ -38,6 +38,14 @@ from typing import (
 
 from .checkpoint import BaseCheckpointer, Checkpoint, _uuid7
 from .exceptions import ClearAgentException
+from .interrupt import (
+    GraphInterrupt,
+    GraphPaused,
+    _RunContext,
+    _set_run_ctx,
+    _reset_run_ctx,
+    _get_run_ctx as _current_run_ctx_get,
+)
 
 # ==================== 常量 ====================
 
@@ -374,7 +382,12 @@ class CompiledGraph(Generic[S]):
         cfg = config or RunConfig()
         cfg.with_thread_id()
         state = self._normalize_input(input)
-        return self._run_loop_sync(state, start_node=START, config=cfg)
+        return self._with_run_ctx_sync(
+            cfg.thread_id,
+            None,
+            False,
+            lambda: self._run_loop_sync(state, start_node=START, config=cfg),
+        )
 
     def stream(
         self, input: Mapping[str, Any], config: Optional[RunConfig] = None
@@ -383,7 +396,12 @@ class CompiledGraph(Generic[S]):
         cfg = config or RunConfig()
         cfg.with_thread_id()
         state = self._normalize_input(input)
-        yield from self._stream_loop_sync(state, start_node=START, config=cfg)
+        ctx = _RunContext(thread_id=cfg.thread_id)
+        token = _set_run_ctx(ctx)
+        try:
+            yield from self._stream_loop_sync(state, start_node=START, config=cfg)
+        finally:
+            _reset_run_ctx(token)
 
     # ---------- 异步接口 ----------
 
@@ -393,7 +411,12 @@ class CompiledGraph(Generic[S]):
         cfg = config or RunConfig()
         cfg.with_thread_id()
         state = self._normalize_input(input)
-        return await self._run_loop_async(state, start_node=START, config=cfg)
+        ctx = _RunContext(thread_id=cfg.thread_id)
+        token = _set_run_ctx(ctx)
+        try:
+            return await self._run_loop_async(state, start_node=START, config=cfg)
+        finally:
+            _reset_run_ctx(token)
 
     async def astream(
         self, input: Mapping[str, Any], config: Optional[RunConfig] = None
@@ -401,8 +424,34 @@ class CompiledGraph(Generic[S]):
         cfg = config or RunConfig()
         cfg.with_thread_id()
         state = self._normalize_input(input)
-        async for ev in self._stream_loop_async(state, start_node=START, config=cfg):
-            yield ev
+        ctx = _RunContext(thread_id=cfg.thread_id)
+        token = _set_run_ctx(ctx)
+        try:
+            async for ev in self._stream_loop_async(state, start_node=START, config=cfg):
+                yield ev
+        finally:
+            _reset_run_ctx(token)
+
+    # ---------- 内部 helper ----------
+
+    def _with_run_ctx_sync(
+        self,
+        thread_id: Optional[str],
+        resume_value: Any,
+        has_resume_value: bool,
+        fn: Callable[[], Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """同步路径下设置 RunContext 跑 fn"""
+        ctx = _RunContext(
+            thread_id=thread_id,
+            live_value=resume_value,
+            has_live_value=has_resume_value,
+        )
+        token = _set_run_ctx(ctx)
+        try:
+            return fn()
+        finally:
+            _reset_run_ctx(token)
 
     # ---------- Resume / Checkpoint 操作 ----------
 
@@ -411,8 +460,21 @@ class CompiledGraph(Generic[S]):
         thread_id: str,
         checkpoint_id: Optional[str] = None,
         state_patch: Optional[Mapping[str, Any]] = None,
+        value: Any = None,
     ) -> Dict[str, Any]:
-        """从 checkpoint 恢复执行（同步）"""
+        """从 checkpoint 恢复执行（同步）
+
+        Args:
+            thread_id: 会话 ID
+            checkpoint_id: 指定从哪个 checkpoint 续跑；None 取最新
+            state_patch: 续跑前对 state 的字段级修改（按 reducer 合并）
+            value: 中断（HITL）回执；当被恢复的 checkpoint
+                ``metadata.source == "interrupt"`` 时，节点重入时
+                ``interrupt()`` 调用会返回此 value 而非再次抛出
+
+        Returns:
+            最终 state
+        """
         if self.checkpointer is None:
             raise GraphError("resume 需要 checkpointer")
         ckpt = self.checkpointer.get_tuple(thread_id, checkpoint_id)
@@ -422,8 +484,64 @@ class CompiledGraph(Generic[S]):
         if state_patch:
             state = self._merge(state, dict(state_patch))
         next_node = ckpt.next_nodes[0] if ckpt.next_nodes else END
+
+        is_interrupt_resume = ckpt.metadata.get("source") == "interrupt"
+        history = (
+            list(ckpt.metadata.get("resume_values") or [])
+            if is_interrupt_resume
+            else []
+        )
+
         cfg = RunConfig(thread_id=thread_id)
-        return self._run_loop_sync(state, start_node=next_node, config=cfg)
+        ctx = _RunContext(
+            thread_id=thread_id,
+            resume_values=history,
+            live_value=value if is_interrupt_resume else None,
+            has_live_value=is_interrupt_resume,
+        )
+        token = _set_run_ctx(ctx)
+        try:
+            return self._run_loop_sync(state, start_node=next_node, config=cfg)
+        finally:
+            _reset_run_ctx(token)
+
+    async def aresume(
+        self,
+        thread_id: str,
+        checkpoint_id: Optional[str] = None,
+        state_patch: Optional[Mapping[str, Any]] = None,
+        value: Any = None,
+    ) -> Dict[str, Any]:
+        """从 checkpoint 恢复执行（异步）"""
+        if self.checkpointer is None:
+            raise GraphError("aresume 需要 checkpointer")
+        ckpt = await self.checkpointer.aget_tuple(thread_id, checkpoint_id)
+        if ckpt is None:
+            raise GraphError(f"thread {thread_id} 无可恢复 checkpoint")
+        state = dict(ckpt.state)
+        if state_patch:
+            state = self._merge(state, dict(state_patch))
+        next_node = ckpt.next_nodes[0] if ckpt.next_nodes else END
+
+        is_interrupt_resume = ckpt.metadata.get("source") == "interrupt"
+        history = (
+            list(ckpt.metadata.get("resume_values") or [])
+            if is_interrupt_resume
+            else []
+        )
+        cfg = RunConfig(thread_id=thread_id)
+
+        ctx = _RunContext(
+            thread_id=thread_id,
+            resume_values=history,
+            live_value=value if is_interrupt_resume else None,
+            has_live_value=is_interrupt_resume,
+        )
+        token = _set_run_ctx(ctx)
+        try:
+            return await self._run_loop_async(state, start_node=next_node, config=cfg)
+        finally:
+            _reset_run_ctx(token)
 
     def list_checkpoints(self, thread_id: str, limit: int = 50) -> List[Checkpoint]:
         if self.checkpointer is None:
@@ -538,10 +656,17 @@ class CompiledGraph(Generic[S]):
         fn = self._nodes[name]
         if inspect.iscoroutinefunction(fn):
             raise GraphError(f"节点 {name} 是 async，请使用 ainvoke/astream")
+        # 进入新节点前重置 interrupt 计数器
+        ctx = _current_run_ctx_get()
+        if ctx is not None:
+            ctx.reset_counter()
         return fn(state)
 
     async def _call_node_async(self, name: str, state: Dict[str, Any]) -> NodeReturn:
         fn = self._nodes[name]
+        ctx = _current_run_ctx_get()
+        if ctx is not None:
+            ctx.reset_counter()
         if inspect.iscoroutinefunction(fn):
             return await fn(state)
         # 同步 fn 在 ainvoke 路径下放线程池
@@ -556,16 +681,20 @@ class CompiledGraph(Generic[S]):
         parent_id: Optional[str],
         node_just_done: str,
         source: str = "loop",
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Checkpoint]:
         if self.checkpointer is None:
             return None
+        metadata: Dict[str, Any] = {"source": source, "node": node_just_done}
+        if extra_metadata:
+            metadata.update(extra_metadata)
         ckpt = Checkpoint(
             id=_uuid7(),
             thread_id=thread_id,
             parent_id=parent_id,
             state=state,
             next_nodes=[next_node],
-            metadata={"source": source, "node": node_just_done},
+            metadata=metadata,
         )
         self.checkpointer.put(ckpt)
         return ckpt
@@ -600,6 +729,23 @@ class CompiledGraph(Generic[S]):
 
             try:
                 update = self._call_node_sync(current, state)
+            except GraphInterrupt as gi:
+                # HITL 中断：写 source=interrupt ckpt，抛 GraphPaused
+                ckpt = self._write_checkpoint(
+                    state,
+                    next_node=current,
+                    thread_id=config.thread_id or "",
+                    parent_id=last_ckpt_id,
+                    node_just_done=current,
+                    source="interrupt",
+                    extra_metadata={"payload": gi.payload, "resume_values": list((_current_run_ctx_get() or _RunContext()).resume_values)},
+                )
+                ckpt_id = ckpt.id if ckpt else ""
+                raise GraphPaused(
+                    thread_id=config.thread_id or "",
+                    checkpoint_id=ckpt_id,
+                    payload=gi.payload,
+                ) from None
             except Exception as e:
                 if config.on_error == "raise":
                     raise
@@ -655,6 +801,22 @@ class CompiledGraph(Generic[S]):
 
             try:
                 update = await self._call_node_async(current, state)
+            except GraphInterrupt as gi:
+                ckpt = self._write_checkpoint(
+                    state,
+                    next_node=current,
+                    thread_id=config.thread_id or "",
+                    parent_id=last_ckpt_id,
+                    node_just_done=current,
+                    source="interrupt",
+                    extra_metadata={"payload": gi.payload, "resume_values": list((_current_run_ctx_get() or _RunContext()).resume_values)},
+                )
+                ckpt_id = ckpt.id if ckpt else ""
+                raise GraphPaused(
+                    thread_id=config.thread_id or "",
+                    checkpoint_id=ckpt_id,
+                    payload=gi.payload,
+                ) from None
             except Exception as e:
                 if config.on_error == "raise":
                     raise
@@ -715,6 +877,31 @@ class CompiledGraph(Generic[S]):
 
             try:
                 update = self._call_node_sync(current, state)
+            except GraphInterrupt as gi:
+                ckpt = self._write_checkpoint(
+                    state,
+                    next_node=current,
+                    thread_id=config.thread_id or "",
+                    parent_id=last_ckpt_id,
+                    node_just_done=current,
+                    source="interrupt",
+                    extra_metadata={"payload": gi.payload, "resume_values": list((_current_run_ctx_get() or _RunContext()).resume_values)},
+                )
+                yield StreamEvent(
+                    type="interrupt",
+                    node=current,
+                    state=dict(state),
+                    data={
+                        "payload": gi.payload,
+                        "checkpoint_id": ckpt.id if ckpt else None,
+                        "thread_id": config.thread_id,
+                    },
+                )
+                raise GraphPaused(
+                    thread_id=config.thread_id or "",
+                    checkpoint_id=ckpt.id if ckpt else "",
+                    payload=gi.payload,
+                ) from None
             except Exception as e:
                 yield StreamEvent(
                     type="error", node=current, data={"error": str(e), "type": type(e).__name__}
@@ -786,6 +973,31 @@ class CompiledGraph(Generic[S]):
 
             try:
                 update = await self._call_node_async(current, state)
+            except GraphInterrupt as gi:
+                ckpt = self._write_checkpoint(
+                    state,
+                    next_node=current,
+                    thread_id=config.thread_id or "",
+                    parent_id=last_ckpt_id,
+                    node_just_done=current,
+                    source="interrupt",
+                    extra_metadata={"payload": gi.payload, "resume_values": list((_current_run_ctx_get() or _RunContext()).resume_values)},
+                )
+                yield StreamEvent(
+                    type="interrupt",
+                    node=current,
+                    state=dict(state),
+                    data={
+                        "payload": gi.payload,
+                        "checkpoint_id": ckpt.id if ckpt else None,
+                        "thread_id": config.thread_id,
+                    },
+                )
+                raise GraphPaused(
+                    thread_id=config.thread_id or "",
+                    checkpoint_id=ckpt.id if ckpt else "",
+                    payload=gi.payload,
+                ) from None
             except Exception as e:
                 yield StreamEvent(
                     type="error", node=current, data={"error": str(e), "type": type(e).__name__}

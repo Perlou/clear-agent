@@ -50,6 +50,21 @@ class SimpleAgent(Agent):
         self.enable_tool_calling = enable_tool_calling and tool_registry is not None
         self.max_tool_iterations = max_tool_iterations
 
+    def as_graph(self, checkpointer=None):
+        """返回等价的 Simple StateGraph（2.0 新增）
+
+        新代码推荐使用此方法获取 graph 实例，享受 checkpoint/resume/HITL 能力。
+        旧 ``run()`` 接口保持向后兼容，行为不变。
+        """
+        from ._simple_graph import build_simple_graph
+
+        return build_simple_graph(
+            llm=self.llm,
+            tool_registry=self.tool_registry,
+            config=self.config,
+            checkpointer=checkpointer,
+        )
+
     def run(self, input_text: str, **kwargs) -> str:
         """
         运行 SimpleAgent（基于 Function Calling）

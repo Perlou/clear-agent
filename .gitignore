@@ -172,3 +172,7 @@ Thumbs.db
 
 # Claude / project state
 .claude/settings.local.json
+
+# ClearAgent 运行时持久化产物（不入库）
+memory/
+tool-output/

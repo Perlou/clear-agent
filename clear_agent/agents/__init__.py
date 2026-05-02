@@ -10,6 +10,9 @@ from .factory import create_agent, default_subagent_factory
 
 # 2.0 graph builders
 from ._react_graph import build_react_graph, ReActGraphState, BUILTIN_TOOL_NAMES
+from ._simple_graph import build_simple_graph, SimpleGraphState
+from ._reflection_graph import build_reflection_graph, ReflectionGraphState
+from ._plan_solve_graph import build_plan_solve_graph, PlanSolveGraphState
 
 # 向后兼容别名
 PlanAndSolveAgent = PlanSolveAgent
@@ -25,6 +28,12 @@ __all__ = [
     "default_subagent_factory",
     # 2.0 graph builders
     "build_react_graph",
+    "build_simple_graph",
+    "build_reflection_graph",
+    "build_plan_solve_graph",
     "ReActGraphState",
+    "SimpleGraphState",
+    "ReflectionGraphState",
+    "PlanSolveGraphState",
     "BUILTIN_TOOL_NAMES",
 ]

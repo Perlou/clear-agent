@@ -108,6 +108,14 @@ class ReflectionAgent(Agent):
         self.enable_tool_calling = enable_tool_calling and tool_registry is not None
         self.max_tool_iterations = max_tool_iterations
 
+    def as_graph(self, checkpointer=None):
+        """返回等价的 Reflection StateGraph（2.0 新增）"""
+        from ._reflection_graph import build_reflection_graph
+
+        return build_reflection_graph(
+            llm=self.llm, config=self.config, checkpointer=checkpointer
+        )
+
     def run(self, input_text: str, **kwargs) -> str:
         """
         运行Reflection Agent

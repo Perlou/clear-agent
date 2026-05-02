@@ -330,6 +330,14 @@ class PlanSolveAgent(Agent):
             max_tool_iterations=max_tool_iterations,
         )
 
+    def as_graph(self, checkpointer=None):
+        """返回等价的 Plan-Solve StateGraph（2.0 新增）"""
+        from ._plan_solve_graph import build_plan_solve_graph
+
+        return build_plan_solve_graph(
+            llm=self.llm, config=self.config, checkpointer=checkpointer
+        )
+
     def run(self, input_text: str, **kwargs) -> str:
         """
         运行Plan and Solve Agent
