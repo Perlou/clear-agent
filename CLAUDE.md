@@ -6,10 +6,11 @@
 
 ## 项目概览
 
-**ClearAgent v2.0.0a1** —— 基于 OpenAI 原生 API 构建的生产级多智能体框架（Python 3.10+）。
+**ClearAgent v2.0.0b1** —— 基于 OpenAI 原生 API 构建的生产级多智能体框架（Python 3.10+）。
 
 - **1.x 主线**：上下文工程 + 工具响应协议 + 子代理机制
-- **2.0 主线**：StateGraph + Checkpointer + Human-in-the-Loop + 结构化输出 + Eval-harness + Retrieval
+- **2.0-α 主线**：StateGraph + Checkpointer + Human-in-the-Loop + 结构化输出 + Eval-harness
+- **2.0-β 主线**：完整 RAG Pipeline（移植自 AntonAgents）+ 多层 Memory（Working/Semantic + 内存图谱 + Manager）+ Qdrant 向量库 + 嵌入抽象
 
 100% 向后兼容 1.x；`agent.run()` 老入口、`PlanAndSolveAgent` 别名、所有顶层导出全部保留。
 
@@ -137,13 +138,61 @@ clear-agent/
 - `target` 支持 `CompiledGraph` 与 `callable`；`extract_predicted` 默认从 `final_answer` / `messages` 抽取
 - 单条 example 抛异常不打断整批；按 tag 聚合 + top failures 排序
 
-### 12. 🆕 2.0 Retrieval（spike）
+### 12. 🆕 2.0 Retrieval（α spike + β 完整）
 
 - `EmbeddingModel` 抽象 + 三种实现：`LocalTransformerEmbedding`（sentence-transformers / hf）/ `DashScopeEmbedding`（OpenAI 兼容 REST 优先）/ `TFIDFEmbedding`（sklearn 兜底）
 - 工厂带回退：`create_embedding_model_with_fallback(preferred, ...)`
 - 全局单例：`get_text_embedder()` / `get_dimension()` / `refresh_embedder()`
 - `SQLiteDocumentStore`：同路径单例 + 线程本地连接 + `:memory:` 支持
+- **β**：`QdrantVectorStore` + `QdrantConnectionManager`（云/本地双连接 + HNSW 调优 + payload 索引 + ≥1.16/<1.16 双 API 兼容）
 - 全部移植自 AntonAgents（License 一致 CC-BY-NC-SA-4.0），按 `project_docs/07` SOP 改 namespace + 异常 + 加 license 标注
+
+### 13. 🆕 2.0-β 完整 RAG Pipeline
+
+- `clear_agent/retrieval/rag/` —— 7 大职责（移植自 AntonAgents 1380 LOC）
+  1. **加载**：MarkItDown 通用读取（50+ 格式：PDF/DOCX/XLSX/PPTX/图像 OCR/音频转写/HTML/代码/配置）+ PDF 增强后处理（去噪 + 短行合并 + 段落重组）+ utf8/latin-1 fallback
+  2. **分块**：langdetect 语言检测 + Markdown-aware 段落切分（按 `#` 标题保留 `heading_path`）+ token 预算 + overlap 重叠
+  3. **图谱集成**：`build_graph_from_chunks(neo4j, chunks)`（可选，需用户自带 neo4j 实例）
+  4. **索引**：批量 embedding + 小批失败重试 + 维度对齐 + 零向量兜底 + `is_rag_data/rag_namespace/data_source` 标签
+  5. **检索**：`embed_query` + `search_vectors` + **MQE**（多查询扩展）+ **HyDE**（假设性回答检索；需传 `llm`）
+  6. **重排**：Cross-encoder（sentence-transformers 可选）+ 图信号融合（同文档密度 + 邻近度归一化）+ 加权 rank
+  7. **结果组装**：`merge_snippets` / `expand_neighbors_from_pool` / `merge_snippets_grouped`（按文档分组带引用）/ `compress_ranked_items`（合并相邻 + 每文档上限）/ `tldr_summarize`
+- 高层入口：`create_rag_pipeline(qdrant_url=..., rag_namespace=..., llm=...)` 一行返回 `{store, add_documents, search, search_advanced, rerank, summarize, get_stats}`
+- 关键改造（移植 SOP）：原硬编码 `AntonAgentsLLM()` 改为接受外部 `llm` 参数；默认集合名 `clear_agent_rag_vectors`
+
+### 14. 🆕 2.0-β 多层 Memory 体系
+
+`clear_agent/memory/` —— 移植 + 重写：
+
+- **`MemoryItem` / `MemoryConfig` / `BaseMemory`**（base.py，移植自 AntonAgents 182 LOC）：Pydantic 数据 + 7 个抽象接口
+- **`WorkingMemory`**（working.py，移植自 426 LOC）：短期会话级
+  - 内存存储 + heapq 优先级队列
+  - 检索：TF-IDF（sklearn 可选）+ 关键词匹配 + 时间衰减 + 重要性加权
+  - 三种 forget 策略：`importance_based / time_based / capacity_based`
+  - TTL 自动过期 + 容量/token 双重上限
+  - 便捷接口：`get_recent / get_important / get_all / get_context_summary`
+- **`SemanticMemory` + `Entity` + `Relation`**（semantic.py，移植自 1238 LOC，**重大改造**）：长期向量+图谱
+  - 按 plan §07 §2.3 决策**不引入 Neo4j**，把图数据库集成全部替换为内存图谱（`self.entities` dict + `self.relations` list）
+  - 嵌入模型 + 向量库 + spaCy NLP 全部支持注入
+  - 实体提取：spaCy NER 优先，缺失时走 fallback（最多 5 个单词作为潜在实体）
+  - 共现关系：N 实体 → N×(N-1)/2 条 `CO_OCCURS` 边
+  - 混合检索：`_vector_search`（Qdrant）+ `_graph_search`（内存图实体重叠）+ `_combine_and_rank_results`（softmax 概率）
+  - BFS 图遍历 `get_related_entities(max_hops)` 替代原 Neo4j 查询
+- **`MemoryManager`**（manager.py，**重写**，AntonAgents 0 字节从未跑通）
+  - 注册式：`mgr.register("working", WorkingMemory(...))` 不假设具体子系统
+  - `add` 按 `memory_type` 自动路由
+  - `retrieve` 跨子系统聚合 + 按 importance 去重合并
+  - 错误隔离：单子系统抛错不影响其他
+
+### 15. β 阶段持久化目录
+
+| 类型 | 默认路径 / 集合 | 配置项 |
+|---|---|---|
+| Qdrant RAG 集合 | `clear_agent_rag_vectors` | `create_rag_pipeline(collection_name=...)` |
+| Qdrant Semantic 集合 | `clear_agent_semantic` | 自动创建 |
+| WorkingMemory | （纯内存，不持久化） | — |
+| SemanticMemory 图谱 | （纯内存，不持久化） | 重启需重新 add |
+| SQLiteDocumentStore | 用户传 `db_path` | — |
 
 ## 配置与环境变量
 
@@ -202,6 +251,7 @@ python examples/async_agent_demo.py
 | `05-eval-harness.md` | Dataset / Evaluator / Runner |
 | `06-migration-1.x-to-2.x.md` | 迁移路径 |
 | `07-anton-agents-port.md` | AntonAgents 移植 SOP |
+| `08-rag-memory-integration.md` | β 阶段 RAG + Memory 集成 spec（含 273 测试明细） |
 
 ### 2.0 用户向 quickstart（`docs/`）
 
@@ -210,6 +260,8 @@ python examples/async_agent_demo.py
 | StateGraph 上手 | `graph-architecture.md` |
 | 结构化输出 | `structured-output.md` |
 | Eval-harness | `eval-harness.md` |
+| **RAG Pipeline（β）** | `rag-guide.md` |
+| **Memory 体系（β）** | `memory-guide.md` |
 | 1.x→2.x 迁移 | `migration-1.x-to-2.x.md` |
 
 ### 1.x 专项（`docs/`）

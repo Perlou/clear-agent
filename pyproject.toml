@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clear-agent"
-version = "2.0.0a1"
-description = "生产级多智能体框架 - StateGraph + Checkpoint + HITL + 结构化输出 + Eval-harness + 工具响应协议 + 上下文工程 + Skills"
+version = "2.0.0b1"
+description = "多智能体框架 - 2.0-β: StateGraph + Checkpoint + HITL + RAG + Memory（移植自 AntonAgents） + 结构化输出 + Eval-harness"
 readme = "README.md"
 license = {text = "CC-BY-NC-SA-4.0"}
 authors = [
@@ -27,17 +27,23 @@ dependencies = [
 [project.optional-dependencies]
 gemini = ["google-genai>=1.0.0"]
 anthropic = ["anthropic>=0.20.0"]
-# 2.0 新增：检索 / RAG（按需安装）
+# 2.0 新增：检索 / RAG / Memory（按需安装）
 retrieval = [
-    "scikit-learn>=1.0.0",  # TFIDFEmbedding 兜底
+    "scikit-learn>=1.0.0",  # TFIDFEmbedding 兜底 + WorkingMemory.retrieve TF-IDF
 ]
 retrieval-qdrant = [
-    "qdrant-client>=1.6.0",  # QdrantVectorStore（β 阶段移植）
+    "qdrant-client>=1.6.0",  # QdrantVectorStore
 ]
 rag = [
-    "sentence-transformers>=2.2.0",
+    "sentence-transformers>=2.2.0",   # local embedding + cross-encoder rerank
     "transformers>=4.20.0",
     "torch>=1.12.0",
+    "markitdown>=0.0.1",              # 通用文档加载（PDF/DOCX/XLSX/...）
+    "langdetect>=1.0.9",              # 语言检测
+]
+memory = [
+    "scikit-learn>=1.0.0",   # WorkingMemory TF-IDF 检索
+    "spacy>=3.4.0",          # SemanticMemory NER（中英文）
 ]
 dashscope = [
     "dashscope>=1.10.0",

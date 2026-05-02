@@ -1,10 +1,203 @@
 # ClearAgent
 
-> 🤖 生产级多智能体框架 —— 基于 OpenAI 原生 API，**v2.0 引入 StateGraph + Checkpoint + Human-in-the-Loop**，集成上下文工程、子代理、Skills、结构化输出、Eval-harness 等 20+ 核心能力。
+> 🤖 生产级多智能体框架 —— 基于 OpenAI 原生 API，**v2.0 引入 StateGraph + Checkpoint + Human-in-the-Loop + 完整 RAG + 多层 Memory**，集成上下文工程、子代理、Skills、结构化输出、Eval-harness 等 25+ 核心能力。
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.0.0a1-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-2.0.0b1-orange.svg)]()
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+## ✨ 核心特性
+
+### 🆕 2.0-β 新增（RAG + Memory）
+
+- **完整 RAG Pipeline** —— 7 大职责（加载/分块/索引/检索/重排/合并/压缩）+ MQE / HyDE 查询扩展 + 引用合并；支持 50+ 文档格式（PDF/DOCX/XLSX/图像 OCR/音频转写）；移植自 AntonAgents（CC-BY-NC-SA-4.0）
+- **多层 Memory 体系** —— `WorkingMemory`（短期，TF-IDF + TTL + 优先级堆）+ `SemanticMemory`（长期，向量 + 内存知识图谱）+ `MemoryManager`（多子系统协调）
+- **向量库** —— `QdrantVectorStore`（云/本地双连接 + HNSW 调优 + payload 索引）+ `SQLiteDocumentStore`
+- **嵌入抽象** —— `LocalTransformerEmbedding` / `DashScopeEmbedding`（OpenAI 兼容 REST）/ `TFIDFEmbedding` 兜底 + 工厂回退
+
+### 2.0-α 新增（图编排时代）
+
+- **StateGraph 抽象**：声明式图构建（节点 / 边 / 条件边 / 字段级 reducer），4 种内置 Agent 全部跑在 graph 上
+- **Checkpointer**：每节点自动快照，支持 `InMemory` / `JsonFile` / `Sqlite` 三种后端，**kill 进程也能 resume**
+- **Human-in-the-Loop**：节点内调 `interrupt(payload)` 暂停 → 外部 `compiled.resume(thread_id, value=...)` 注入决策续跑
+- **结构化输出**：`llm.with_structured_output(MyPydanticModel)` 一行打通三种 method
+- **Eval-harness**：Dataset / 4 种 Evaluator（含 `LLMAsJudge`）/ 并发 Runner / Markdown 报告
+
+### 1.x 已有（继续保留，100% 向后兼容）
+
+- **4 种 Agent 范式**：`SimpleAgent` · `ReActAgent` · `ReflectionAgent` · `PlanSolveAgent`
+- **统一 LLM 接口**：自动适配 OpenAI 兼容（DeepSeek/Qwen/Kimi/Ollama 等）、Anthropic、Gemini，支持同步 / 异步 / 流式 / Function Calling
+- **上下文工程**：GSSC 流水线、历史压缩、工具输出截断、Token 增量计数
+- **工具响应协议**：`ToolResponse` 统一返回，配套熔断器、权限过滤、文件编辑乐观锁
+- **子代理机制**：`TaskTool` 派发隔离子任务，工具权限可精确裁剪
+- **Skills 知识外化**：按需加载 `SKILL.md`，预期节省 ~85% Token
+- **工程化套件**：会话持久化、TodoWrite、DevLog、TraceLogger（JSONL+HTML）、异步生命周期钩子、SSE 流式
+
+## 🚀 快速开始
+
+```bash
+# 最小安装
+pip install -e .
+
+# RAG 完整套件（β）
+pip install -e ".[retrieval,retrieval-qdrant,rag]"
+
+# Memory 完整套件（β）
+pip install -e ".[memory,retrieval-qdrant]"
+python -m spacy download zh_core_web_sm    # 可选：中文 NER
+
+# 多 provider
+pip install -e ".[anthropic,gemini,dashscope]"
+
+# 配置环境变量
+cp .env.example .env       # 填入 LLM_MODEL_ID / LLM_API_KEY / LLM_BASE_URL
+```
+
+### 1.x 风格（向后兼容）
+
+```python
+from clear_agent import ClearAgentLLM, ReActAgent, ToolRegistry, CalculatorTool
+
+llm = ClearAgentLLM()
+registry = ToolRegistry(); registry.register_tool(CalculatorTool())
+agent = ReActAgent(name="demo", llm=llm, tool_registry=registry)
+print(agent.run("计算 (123 + 456) * 2"))
+```
+
+### 2.0-α：StateGraph + Checkpoint
+
+```python
+from clear_agent import ClearAgentLLM, ReActAgent, SqliteCheckpointer
+from clear_agent.core.graph import RunConfig
+
+agent = ReActAgent(name="demo", llm=ClearAgentLLM())
+graph = agent.as_graph(checkpointer=SqliteCheckpointer("memory/runs.db"))
+
+result = graph.invoke(
+    {"messages": [{"role": "user", "content": "..."}], "max_steps": 5},
+    config=RunConfig(thread_id="thread-1"),
+)
+# kill 进程后任意时间 resume：
+# graph.resume("thread-1") 继续从最后 checkpoint 跑下去
+```
+
+### 2.0-β：完整 RAG Pipeline
+
+```python
+from clear_agent.retrieval.rag import create_rag_pipeline
+
+rag = create_rag_pipeline(qdrant_url="http://localhost:6333", rag_namespace="my_kb")
+
+rag["add_documents"](["docs/a.pdf", "docs/b.md"])             # 自动分块 + 索引
+hits = rag["search"]("如何配置 LLM？", top_k=5)                # 基础检索
+hits = rag["search_advanced"]("...", enable_mqe=True, enable_hyde=True)  # 查询扩展
+```
+
+### 2.0-β：多层 Memory
+
+```python
+from clear_agent.memory import (
+    MemoryManager, WorkingMemory, SemanticMemory, MemoryConfig, MemoryItem,
+)
+
+mgr = MemoryManager()
+mgr.register("working", WorkingMemory(MemoryConfig()))
+mgr.register("semantic", SemanticMemory(config=MemoryConfig()))
+
+mgr.add(MemoryItem(id="m1", content="...", memory_type="working", ...))
+hits = mgr.retrieve("query", limit=10)   # 跨子系统聚合
+```
+
+更多示例：[`examples/memory_demo.py`](examples/memory_demo.py) · [`examples/rag_hello_world.py`](examples/rag_hello_world.py) · [`examples/async_agent_demo.py`](examples/async_agent_demo.py)
+
+## 📊 vs LangGraph + LangChain（对照表）
+
+| 能力 | LangGraph/Chain | ClearAgent 2.0-β | 备注 |
+|---|---|---|---|
+| 声明式图（节点 / 边 / 条件边） | ✅ | ✅ | 字段级 reducer 内置 |
+| Checkpointer | ✅ Memory/Sqlite/Postgres | ✅ Memory/JsonFile/Sqlite | Postgres 待 RC |
+| Human-in-the-Loop | ✅ `interrupt()` | ✅ 行为对齐 + 同节点多次中断回放 | |
+| 时间旅行（rewind） | ✅ | ✅ | |
+| 结构化输出 | ✅ | ✅ 同名 API + 3 种 method | |
+| **完整 RAG Pipeline** | ✅ 50+ vectorstore | ✅ Qdrant + 完整 7 段 + MQE/HyDE | β 移植自 AntonAgents |
+| **多层 Memory** | ✅ BaseStore | ✅ Working + Semantic + Manager | β 新增 |
+| **文档加载** | ✅ 100+ loaders | ✅ MarkItDown 50+ 格式 | β 新增 |
+| **嵌入抽象** | ✅ Embeddings | ✅ Local/DashScope/TFIDF + 工厂 | β 新增 |
+| **重排** | ✅ | ✅ Cross-encoder + 图信号融合 | β 新增 |
+| Eval / Tracing | LangSmith | TraceLogger + Eval-harness | 不依赖外部服务 |
+| Multi-agent supervisor | ✅ | ⚠️ TaskTool（RC 加 graph 原生） | |
+| 工具并行 | ✅ | ⚠️ 顺序（待优化） | |
+| Multimodal / Prompt caching | ✅ | ❌ 后续 | |
+| 运行时核心依赖 | langchain-core 全家桶 | pydantic + tiktoken + pyyaml + networkx + numpy | 轻量 |
+
+> 设计取舍：ClearAgent 2.0-β 在保留**轻量、单包、零重型依赖**定位的同时，把 LangGraph + LangChain 编排能力的 **~85%** 压进 ~7K LOC 自研代码（含 ~4470 LOC β 阶段移植自 AntonAgents）。
+
+## 📦 项目结构
+
+```
+clear_agent/
+├── core/                # Agent 基类 / LLM / Config
+│   ├── graph.py             # StateGraph + reducers
+│   ├── checkpoint.py        # Memory/JsonFile/Sqlite
+│   ├── interrupt.py         # interrupt() + GraphPaused
+│   └── structured.py        # with_structured_output
+├── agents/              # 4 种范式 + graph builders
+├── hitl/                # Approval / Edit / ToolValidation
+├── eval/                # Dataset / Evaluator / Runner
+├── retrieval/           # 🆕 β
+│   ├── embeddings.py        # Local / DashScope / TFIDF + 全局单例
+│   ├── rag/
+│   │   ├── document.py          # Document / Chunker
+│   │   └── pipeline.py          # 7 大职责 + create_rag_pipeline
+│   └── storage/
+│       ├── document_store.py    # SQLite
+│       └── qdrant_store.py      # Qdrant + ConnectionManager
+├── memory/              # 🆕 β
+│   ├── base.py              # MemoryItem/Config/BaseMemory
+│   ├── working.py           # 短期 + TF-IDF
+│   ├── semantic.py          # 长期 + 向量 + 内存图谱（移除 Neo4j）
+│   └── manager.py           # 多子系统协调（重写）
+├── context/             # GSSC 流水线
+├── tools/               # 工具系统
+├── observability/       # TraceLogger
+└── skills/              # SkillLoader
+
+project_docs/            # 9 篇设计 spec（00-08）
+docs/                    # 18+ 篇专项指南
+tests/                   # 500+ pytest 测试
+```
+
+## 📚 文档
+
+- **新用户**：[`README.md`](README.md) → [`CLAUDE.md`](CLAUDE.md) → [`docs/graph-architecture.md`](docs/graph-architecture.md)
+- **2.0-β 用户向**：[`docs/rag-guide.md`](docs/rag-guide.md) · [`docs/memory-guide.md`](docs/memory-guide.md)
+- **2.0-α 用户向**：[`docs/graph-architecture.md`](docs/graph-architecture.md) · [`docs/structured-output.md`](docs/structured-output.md) · [`docs/eval-harness.md`](docs/eval-harness.md) · [`docs/migration-1.x-to-2.x.md`](docs/migration-1.x-to-2.x.md)
+- **2.0 设计 spec**：[`project_docs/00-overview.md`](project_docs/00-overview.md) … `08-rag-memory-integration.md`
+- **1.x 专项**：上下文工程、子代理、Skills、TodoWrite、DevLog、SSE、异步等位于 [`docs/`](docs/)
+
+## 🛠️ 开发
+
+```bash
+pytest                                                                # 500+ 测试
+pytest tests/test_rag_pipeline.py tests/test_semantic_memory.py -q    # β 专项
+black clear_agent tests
+isort clear_agent tests
+mypy clear_agent
+```
+
+## 🗺️ 路线图
+
+- **2.0-α**（已发版 ✅）：StateGraph + Checkpoint + HITL + 结构化输出 + Eval-harness + Retrieval spike
+- **2.0-β**（**当前** ✅）：完整 RAG pipeline、Memory 体系（Working/Semantic）、MemoryManager 重写、QdrantVectorStore、嵌入抽象
+- **2.0-RC**：基于 graph 原生的 multi-agent（supervisor/swarm/handoff）、MCP 协议、工具并行、真异步 OpenAI 客户端、Anthropic/Gemini 适配器补全、LCEL-lite
+
+详见 [`project_docs/00-overview.md`](project_docs/00-overview.md) 与 [`project_docs/08-rag-memory-integration.md`](project_docs/08-rag-memory-integration.md)。
+
+## 📄 License
+
+[CC BY-NC-SA 4.0](LICENSE) —— 允许学习/研究/分享，**禁止商业使用**。商用请联系作者 `perloukevin@gmail.com`。
+
+memory + RAG 模块**移植自姊妹项目 [AntonAgents](https://github.com/Perlou/AntonAgents)**（同作者，同 License）。详见 [`project_docs/07-anton-agents-port.md`](project_docs/07-anton-agents-port.md)。
 
 ## ✨ 核心特性
 
