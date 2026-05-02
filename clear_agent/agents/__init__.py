@@ -8,6 +8,9 @@ from .plan_solve_agent import PlanSolveAgent
 # 子代理机制（第06章）
 from .factory import create_agent, default_subagent_factory
 
+# 2.0 graph builders
+from ._react_graph import build_react_graph, ReActGraphState, BUILTIN_TOOL_NAMES
+
 # 向后兼容别名
 PlanAndSolveAgent = PlanSolveAgent
 
@@ -20,4 +23,8 @@ __all__ = [
     # 子代理工厂函数
     "create_agent",
     "default_subagent_factory",
+    # 2.0 graph builders
+    "build_react_graph",
+    "ReActGraphState",
+    "BUILTIN_TOOL_NAMES",
 ]

@@ -14,12 +14,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import sqlite3
 import time
 import uuid
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from threading import Lock
+from typing import Any, Dict, Iterator, List, Optional
 
 
 def _uuid7() -> str:
@@ -201,3 +207,364 @@ class InMemoryCheckpointer(BaseCheckpointer):
         else:
             for c in self._threads.pop(thread_id, []):
                 self._index.pop((thread_id, c.id), None)
+
+
+# ==================== JsonFileCheckpointer ====================
+
+
+class JsonFileCheckpointer(BaseCheckpointer):
+    """文件后端 checkpointer
+
+    目录布局:
+        <base_dir>/<thread_id>/<checkpoint_id>.json   # 单个 ckpt 数据
+        <base_dir>/<thread_id>/_index.jsonl           # 倒序追加，加速 list()
+
+    特性:
+    - 原子写入（tmp + os.replace），与现有 SessionStore.save 一致
+    - 兼容 1.x SessionStore：能读取 memory/sessions/session-*.json 转为单 ckpt thread
+    - 进程退出后状态完整保留
+    - 单进程下并发安全（用 _lock 保护索引写入）
+
+    Args:
+        base_dir: checkpoint 根目录（默认 memory/checkpoints）
+        legacy_session_dir: 旧 SessionStore 目录（用于读取兼容；写入仍用 base_dir）
+    """
+
+    def __init__(
+        self,
+        base_dir: str = "memory/checkpoints",
+        legacy_session_dir: Optional[str] = "memory/sessions",
+    ) -> None:
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.legacy_session_dir = (
+            Path(legacy_session_dir) if legacy_session_dir else None
+        )
+        self._lock = Lock()
+
+    def _thread_dir(self, thread_id: str) -> Path:
+        d = self.base_dir / thread_id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def put(self, ckpt: Checkpoint) -> None:
+        td = self._thread_dir(ckpt.thread_id)
+        filepath = td / f"{ckpt.id}.json"
+        tmp_path = filepath.with_suffix(".json.tmp")
+
+        # 原子写入正文
+        with tmp_path.open("w", encoding="utf-8") as f:
+            json.dump(ckpt.to_dict(), f, indent=2, ensure_ascii=False, default=str)
+        os.replace(tmp_path, filepath)
+
+        # 追加索引（受锁保护）
+        idx_path = td / "_index.jsonl"
+        with self._lock:
+            with idx_path.open("a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "id": ckpt.id,
+                            "created_at": ckpt.created_at.isoformat(),
+                            "parent_id": ckpt.parent_id,
+                        }
+                    )
+                    + "\n"
+                )
+
+    def get_tuple(
+        self, thread_id: str, checkpoint_id: Optional[str] = None
+    ) -> Optional[Checkpoint]:
+        td = self.base_dir / thread_id
+        if not td.exists():
+            # 尝试从 legacy session 目录读取
+            return self._load_legacy(thread_id, checkpoint_id)
+
+        if checkpoint_id is not None:
+            filepath = td / f"{checkpoint_id}.json"
+            if not filepath.exists():
+                return None
+            return self._read_ckpt(filepath)
+
+        # 取最新：用索引
+        latest_id = self._latest_id_from_index(td)
+        if latest_id is None:
+            return None
+        filepath = td / f"{latest_id}.json"
+        return self._read_ckpt(filepath) if filepath.exists() else None
+
+    def list(
+        self,
+        thread_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Checkpoint]:
+        td = self.base_dir / thread_id
+        if not td.exists():
+            return []
+
+        idx_path = td / "_index.jsonl"
+        if not idx_path.exists():
+            return []
+
+        # 读全部索引项（小数据量）
+        entries: List[Dict[str, Any]] = []
+        with idx_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+
+        # 倒序
+        entries.reverse()
+
+        # 过滤 before
+        if before is not None:
+            new_entries: List[Dict[str, Any]] = []
+            seen = False
+            for e in entries:
+                if seen:
+                    new_entries.append(e)
+                if e["id"] == before:
+                    seen = True
+            entries = new_entries
+
+        results: List[Checkpoint] = []
+        for e in entries[:limit]:
+            filepath = td / f"{e['id']}.json"
+            if filepath.exists():
+                ckpt = self._read_ckpt(filepath)
+                if ckpt:
+                    results.append(ckpt)
+        return results
+
+    @staticmethod
+    def _read_ckpt(filepath: Path) -> Optional[Checkpoint]:
+        try:
+            with filepath.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            return Checkpoint.from_dict(data)
+        except (OSError, json.JSONDecodeError, TypeError):
+            return None
+
+    @staticmethod
+    def _latest_id_from_index(thread_dir: Path) -> Optional[str]:
+        idx_path = thread_dir / "_index.jsonl"
+        if not idx_path.exists():
+            return None
+        last_line = ""
+        with idx_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    last_line = line
+        if not last_line:
+            return None
+        try:
+            return json.loads(last_line)["id"]
+        except (json.JSONDecodeError, KeyError):
+            return None
+
+    def _load_legacy(
+        self, thread_id: str, checkpoint_id: Optional[str]
+    ) -> Optional[Checkpoint]:
+        """尝试从 1.x SessionStore 文件加载（兼容模式）
+
+        1.x session 文件用 thread_id 作为文件名（不带 .json 后缀也接受），
+        转换为单 checkpoint thread 返回。
+        """
+        if self.legacy_session_dir is None or not self.legacy_session_dir.exists():
+            return None
+
+        candidates = [
+            self.legacy_session_dir / f"{thread_id}.json",
+            self.legacy_session_dir / thread_id,
+        ]
+        for filepath in candidates:
+            if filepath.is_file():
+                try:
+                    with filepath.open("r", encoding="utf-8") as f:
+                        legacy = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    continue
+                # 转为单 checkpoint
+                return Checkpoint(
+                    id=legacy.get("session_id") or _uuid7(),
+                    thread_id=thread_id,
+                    parent_id=None,
+                    state={"messages": legacy.get("history", [])},
+                    next_nodes=[],
+                    created_at=datetime.now(),
+                    metadata={
+                        "source": "legacy_session",
+                        "legacy_path": str(filepath),
+                        **(legacy.get("metadata") or {}),
+                    },
+                )
+        return None
+
+
+# ==================== SqliteCheckpointer ====================
+
+
+_SQLITE_DDL = """
+CREATE TABLE IF NOT EXISTS checkpoints (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    parent_id TEXT,
+    state_json TEXT NOT NULL,
+    next_nodes_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    metadata_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_thread_created
+    ON checkpoints(thread_id, created_at DESC);
+"""
+
+
+class SqliteCheckpointer(BaseCheckpointer):
+    """SQLite 后端（生产推荐）
+
+    单文件 .db；WAL 模式 + synchronous=NORMAL 平衡性能与持久性。
+    标准库 sqlite3 实现，零额外依赖。
+    """
+
+    def __init__(self, db_path: str = "memory/checkpoints.db") -> None:
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_schema()
+
+    def _init_schema(self) -> None:
+        with self._connect() as conn:
+            conn.executescript(_SQLITE_DDL)
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        # check_same_thread=False 支持线程池调用；用 isolation_level=None 自管事务
+        conn = sqlite3.connect(
+            self.db_path,
+            check_same_thread=False,
+            isolation_level=None,
+            timeout=30.0,
+        )
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            yield conn
+        finally:
+            conn.close()
+
+    def put(self, ckpt: Checkpoint) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO checkpoints
+                    (id, thread_id, parent_id, state_json, next_nodes_json, created_at, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ckpt.id,
+                    ckpt.thread_id,
+                    ckpt.parent_id,
+                    json.dumps(ckpt.state, ensure_ascii=False, default=str),
+                    json.dumps(ckpt.next_nodes, ensure_ascii=False),
+                    ckpt.created_at.isoformat(),
+                    json.dumps(ckpt.metadata, ensure_ascii=False, default=str),
+                ),
+            )
+
+    def get_tuple(
+        self, thread_id: str, checkpoint_id: Optional[str] = None
+    ) -> Optional[Checkpoint]:
+        with self._connect() as conn:
+            if checkpoint_id is not None:
+                row = conn.execute(
+                    "SELECT id, thread_id, parent_id, state_json, next_nodes_json, created_at, metadata_json "
+                    "FROM checkpoints WHERE thread_id=? AND id=?",
+                    (thread_id, checkpoint_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT id, thread_id, parent_id, state_json, next_nodes_json, created_at, metadata_json "
+                    "FROM checkpoints WHERE thread_id=? ORDER BY created_at DESC LIMIT 1",
+                    (thread_id,),
+                ).fetchone()
+        return self._row_to_ckpt(row) if row else None
+
+    def list(
+        self,
+        thread_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Checkpoint]:
+        with self._connect() as conn:
+            if before is not None:
+                # 找到 before 的 created_at
+                row = conn.execute(
+                    "SELECT created_at FROM checkpoints WHERE id=? AND thread_id=?",
+                    (before, thread_id),
+                ).fetchone()
+                if row is None:
+                    return []
+                before_ts = row[0]
+                rows = conn.execute(
+                    "SELECT id, thread_id, parent_id, state_json, next_nodes_json, created_at, metadata_json "
+                    "FROM checkpoints WHERE thread_id=? AND created_at < ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (thread_id, before_ts, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, thread_id, parent_id, state_json, next_nodes_json, created_at, metadata_json "
+                    "FROM checkpoints WHERE thread_id=? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (thread_id, limit),
+                ).fetchall()
+        return [c for c in (self._row_to_ckpt(r) for r in rows) if c is not None]
+
+    @staticmethod
+    def _row_to_ckpt(row: tuple) -> Optional[Checkpoint]:
+        if row is None:
+            return None
+        try:
+            return Checkpoint(
+                id=row[0],
+                thread_id=row[1],
+                parent_id=row[2],
+                state=json.loads(row[3]),
+                next_nodes=json.loads(row[4]),
+                created_at=datetime.fromisoformat(row[5]),
+                metadata=json.loads(row[6]),
+            )
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return None
+
+
+# ==================== 工厂函数 ====================
+
+
+def make_checkpointer(
+    backend: str = "memory",
+    base_dir: str = "memory/checkpoints",
+    db_path: str = "memory/checkpoints.db",
+    legacy_session_dir: Optional[str] = "memory/sessions",
+) -> BaseCheckpointer:
+    """根据 backend 名创建对应 checkpointer
+
+    Args:
+        backend: "memory" | "json" | "sqlite"
+    """
+    backend = backend.lower()
+    if backend == "memory":
+        return InMemoryCheckpointer()
+    if backend == "json":
+        return JsonFileCheckpointer(
+            base_dir=base_dir, legacy_session_dir=legacy_session_dir
+        )
+    if backend == "sqlite":
+        return SqliteCheckpointer(db_path=db_path)
+    raise ValueError(f"未知 checkpoint backend: {backend}")

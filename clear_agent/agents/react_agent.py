@@ -88,6 +88,34 @@ class ReActAgent(Agent):
         """添加工具到工具注册表"""
         self.tool_registry.register_tool(tool)
 
+    def as_graph(self, checkpointer=None):
+        """返回等价的 ReAct StateGraph（2.0 新增）
+
+        新代码推荐使用此方法获取 graph 实例，可享受 checkpoint / resume / stream / HITL 能力。
+        旧 ``run()`` / ``arun()`` 接口保持向后兼容，行为不变。
+
+        用法:
+            compiled = agent.as_graph(checkpointer=InMemoryCheckpointer())
+            result = compiled.invoke({
+                "messages": [{"role": "user", "content": "hello"}],
+                "max_steps": agent.max_steps,
+            })
+
+        Args:
+            checkpointer: 可选 checkpointer；不传则不持久化
+
+        Returns:
+            CompiledGraph 实例
+        """
+        from ._react_graph import build_react_graph
+
+        return build_react_graph(
+            llm=self.llm,
+            tool_registry=self.tool_registry,
+            config=self.config,
+            checkpointer=checkpointer,
+        )
+
     def run(self, input_text: str, **kwargs) -> str:
         """
         运行 ReAct Agent

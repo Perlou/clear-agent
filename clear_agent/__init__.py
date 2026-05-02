@@ -27,9 +27,27 @@ from .agents.react_agent import ReActAgent
 from .agents.reflection_agent import ReflectionAgent
 from .agents.plan_solve_agent import PlanSolveAgent
 
+# 向后兼容别名
+PlanAndSolveAgent = PlanSolveAgent
+
 # 工具系统
 from .tools.registry import ToolRegistry, global_registry
 from .tools.builtin.calculator import CalculatorTool, calculate
+
+# 2.0 graph builders（可选导入）
+try:
+    from .agents import build_react_graph
+    from .core.graph import StateGraph, CompiledGraph, START, END, RunConfig
+    from .core.checkpoint import (
+        BaseCheckpointer,
+        InMemoryCheckpointer,
+        JsonFileCheckpointer,
+        SqliteCheckpointer,
+        make_checkpointer,
+    )
+    _GRAPH_AVAILABLE = True
+except ImportError:
+    _GRAPH_AVAILABLE = False
 
 __all__ = [
     # 版本信息
@@ -47,9 +65,25 @@ __all__ = [
     "ReActAgent",
     "ReflectionAgent",
     "PlanSolveAgent",
+    "PlanAndSolveAgent",  # 向后兼容别名
     # 工具系统
     "ToolRegistry",
     "global_registry",
     "CalculatorTool",
     "calculate",
 ]
+
+if _GRAPH_AVAILABLE:
+    __all__ += [
+        "build_react_graph",
+        "StateGraph",
+        "CompiledGraph",
+        "START",
+        "END",
+        "RunConfig",
+        "BaseCheckpointer",
+        "InMemoryCheckpointer",
+        "JsonFileCheckpointer",
+        "SqliteCheckpointer",
+        "make_checkpointer",
+    ]
