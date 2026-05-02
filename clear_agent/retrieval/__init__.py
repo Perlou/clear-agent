@@ -29,6 +29,13 @@ from .embeddings import (
     get_text_embedder,
     refresh_embedder,
 )
+from .rag import (
+    Document,
+    DocumentChunk,
+    DocumentProcessor,
+    create_document,
+    load_text_file,
+)
 from .storage import DocumentStore, SQLiteDocumentStore
 
 __all__ = [
@@ -42,6 +49,12 @@ __all__ = [
     "get_text_embedder",
     "get_dimension",
     "refresh_embedder",
+    # rag
+    "Document",
+    "DocumentChunk",
+    "DocumentProcessor",
+    "create_document",
+    "load_text_file",
     # storage
     "DocumentStore",
     "SQLiteDocumentStore",
