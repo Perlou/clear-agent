@@ -50,6 +50,21 @@ try:
 except ImportError:
     _GRAPH_AVAILABLE = False
 
+# 2.0-RC multi-agent 范式包（依赖 graph）
+try:
+    from .multiagent import (
+        HANDOFF_END,
+        Handoff,
+        build_supervisor_graph,
+        build_swarm_graph,
+        make_handoff_tool,
+        make_handoff_tools,
+        parse_handoff_from_tool_calls,
+    )
+    _MULTIAGENT_AVAILABLE = True
+except ImportError:
+    _MULTIAGENT_AVAILABLE = False
+
 __all__ = [
     # 版本信息
     "__version__",
@@ -89,4 +104,15 @@ if _GRAPH_AVAILABLE:
         "JsonFileCheckpointer",
         "SqliteCheckpointer",
         "make_checkpointer",
+    ]
+
+if _MULTIAGENT_AVAILABLE:
+    __all__ += [
+        "HANDOFF_END",
+        "Handoff",
+        "build_supervisor_graph",
+        "build_swarm_graph",
+        "make_handoff_tool",
+        "make_handoff_tools",
+        "parse_handoff_from_tool_calls",
     ]
