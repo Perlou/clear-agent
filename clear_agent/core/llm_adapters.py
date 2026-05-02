@@ -326,6 +326,91 @@ class OpenAIAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"OpenAI Function Calling调用失败: {str(e)}")
 
+    # ==================== 真异步（2.0-RC RC-W3） ====================
+
+    async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
+        """真异步非流式（用 ``AsyncOpenAI``，不走线程池）"""
+        if not self._async_client:
+            self._async_client = self.create_async_client()
+        start_time = time.time()
+        try:
+            response = await self._async_client.chat.completions.create(
+                model=self.model, messages=messages, **kwargs
+            )
+            latency_ms = int((time.time() - start_time) * 1000)
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            reasoning_content = None
+            if self._is_thinking_model(self.model):
+                if hasattr(choice.message, "reasoning_content"):
+                    reasoning_content = choice.message.reasoning_content
+                elif hasattr(choice, "reasoning_content"):
+                    reasoning_content = choice.reasoning_content
+            usage = {}
+            if hasattr(response, "usage") and response.usage:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+            return LLMResponse(
+                content=content,
+                model=self.model,
+                usage=usage,
+                latency_ms=latency_ms,
+                reasoning_content=reasoning_content,
+            )
+        except Exception as e:
+            raise ClearAgentException(f"OpenAI 异步调用失败: {str(e)}")
+
+    async def ainvoke_with_tools_async(
+        self,
+        messages: List[Dict],
+        tools: List[Dict],
+        tool_choice: Union[str, Dict] = "auto",
+        **kwargs,
+    ) -> LLMToolResponse:
+        """真异步 Function Calling"""
+        if not self._async_client:
+            self._async_client = self.create_async_client()
+        start_time = time.time()
+        try:
+            response = await self._async_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                **kwargs,
+            )
+            latency_ms = int((time.time() - start_time) * 1000)
+            message = response.choices[0].message
+            tool_calls = []
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    tool_calls.append(
+                        ToolCall(
+                            id=tc.id,
+                            name=tc.function.name,
+                            arguments=tc.function.arguments,
+                        )
+                    )
+            usage = {}
+            if hasattr(response, "usage") and response.usage:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+            return LLMToolResponse(
+                content=message.content or "",
+                tool_calls=tool_calls,
+                model=response.model,
+                usage=usage,
+                latency_ms=latency_ms,
+            )
+        except Exception as e:
+            raise ClearAgentException(f"OpenAI 异步 Function Calling 调用失败: {str(e)}")
+
 
 class AnthropicAdapter(BaseLLMAdapter):
     """Anthropic Claude适配器

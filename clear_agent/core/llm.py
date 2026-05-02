@@ -230,7 +230,7 @@ class ClearAgentLLM:
         """
         异步非流式调用 LLM
 
-        在线程池中运行同步 invoke 方法，避免阻塞事件循环
+        优先走 adapter 的真异步实现（``AsyncOpenAI``）；缺失时回退到线程池包装
 
         Args:
             messages: 消息列表
@@ -243,8 +243,24 @@ class ClearAgentLLM:
             response = await llm.ainvoke([{"role": "user", "content": "你好"}])
             print(response.content)
         """
+        # 合并参数
+        call_kwargs = {
+            "temperature": kwargs.pop("temperature", self.temperature),
+        }
+        if self.max_tokens:
+            call_kwargs["max_tokens"] = kwargs.pop("max_tokens", self.max_tokens)
+        call_kwargs.update(kwargs)
+
+        # 优先 adapter 的真异步路径（2.0-RC RC-W3）
+        async_fn = getattr(self._adapter, "ainvoke_async", None)
+        if callable(async_fn):
+            return await async_fn(messages, **call_kwargs)
+
+        # 回退：线程池包装同步 invoke
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, lambda: self.invoke(messages, **kwargs))
+        return await loop.run_in_executor(
+            None, lambda: self.invoke(messages, **call_kwargs)
+        )
 
     async def astream_invoke(
         self, messages: List[Dict[str, str]], **kwargs
@@ -281,6 +297,8 @@ class ClearAgentLLM:
         """
         异步调用 LLM 并支持工具调用（Function Calling）
 
+        优先走 adapter 的真异步实现；缺失时回退到线程池包装
+
         Args:
             messages: 消息列表
             tools: 工具 schema 列表
@@ -290,6 +308,20 @@ class ClearAgentLLM:
         Returns:
             统一的工具调用响应对象 (LLMToolResponse)
         """
+        call_kwargs = {
+            "temperature": kwargs.pop("temperature", self.temperature),
+            "tool_choice": tool_choice,
+        }
+        if self.max_tokens:
+            call_kwargs["max_tokens"] = kwargs.pop("max_tokens", self.max_tokens)
+        call_kwargs.update(kwargs)
+
+        # 优先 adapter 真异步路径（2.0-RC RC-W3）
+        async_fn = getattr(self._adapter, "ainvoke_with_tools_async", None)
+        if callable(async_fn):
+            return await async_fn(messages, tools, **call_kwargs)
+
+        # 回退：线程池包装
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, lambda: self.invoke_with_tools(messages, tools, tool_choice, **kwargs)
