@@ -62,7 +62,7 @@ class SimpleAgent(Agent):
             最终回复
         """
         from datetime import datetime
-        from hello_agents.observability import TraceLogger
+        from clear_agent.observability import TraceLogger
 
         session_start_time = datetime.now()
 
