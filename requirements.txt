@@ -1,5 +1,4 @@
 # ClearAgent v1.0.0 核心依赖
-# 安装：pip install hello-agents
 
 openai>=1.0.0,<2.0.0
 requests>=2.25.0,<3.0.0

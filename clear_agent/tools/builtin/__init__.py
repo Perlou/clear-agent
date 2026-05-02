@@ -1,6 +1,6 @@
 """内置工具模块
 
-ClearAgents框架的内置工具集合，包括：
+ClearAgent框架的内置工具集合，包括：
 - CalculatorTool: 数学计算工具
 - ReadTool: 文件读取工具（支持乐观锁）
 - WriteTool: 文件写入工具（支持乐观锁）
