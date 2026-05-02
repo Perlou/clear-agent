@@ -20,6 +20,7 @@ from .core.llm import ClearAgentLLM
 from .core.config import Config
 from .core.message import Message
 from .core.exceptions import ClearAgentException
+from .core.structured import StructuredLLM, StructuredOutputError
 
 # Agent实现
 from .agents.simple_agent import SimpleAgent
@@ -60,6 +61,8 @@ __all__ = [
     "Config",
     "Message",
     "ClearAgentException",
+    "StructuredLLM",
+    "StructuredOutputError",
     # Agent范式
     "SimpleAgent",
     "ReActAgent",

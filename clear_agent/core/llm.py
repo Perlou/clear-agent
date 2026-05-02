@@ -294,3 +294,48 @@ class ClearAgentLLM:
         return await loop.run_in_executor(
             None, lambda: self.invoke_with_tools(messages, tools, tool_choice, **kwargs)
         )
+
+    # ==================== 结构化输出（2.0 新增） ====================
+
+    def with_structured_output(
+        self,
+        schema: Any,
+        method: str = "auto",
+        include_raw: bool = False,
+        max_retries: Optional[int] = None,
+    ) -> "Any":
+        """让 LLM 严格输出符合指定 Pydantic ``BaseModel`` 的对象
+
+        返回一个新的 ``StructuredLLM`` 实例，不污染当前 ``ClearAgentLLM``。
+
+        Args:
+            schema: 继承 ``pydantic.BaseModel`` 的类
+            method: ``"auto"`` / ``"function_calling"`` / ``"json_mode"`` / ``"json_schema"``
+                ``"auto"`` 根据 model + base_url 自动选；其余强制
+            include_raw: 若为 True，返回 ``{"parsed": obj, "raw": LLMResponse, "parsing_error": None|Exception}``
+            max_retries: schema 校验失败重试次数；缺省读 ``Config.structured_output_max_retries``（默认 2）
+
+        Returns:
+            ``StructuredLLM`` 实例，调用 ``.invoke(messages)`` 直接拿到 schema 对象。
+
+        Example:
+            >>> from pydantic import BaseModel
+            >>> class Person(BaseModel):
+            ...     name: str
+            ...     age: int
+            >>> structured = llm.with_structured_output(Person)
+            >>> p = structured.invoke([{"role": "user", "content": "Alice 30 岁"}])
+            >>> p.name, p.age
+            ('Alice', 30)
+        """
+        # 延迟 import 避免循环依赖
+        from .structured import StructuredLLM
+
+        retries = max_retries if max_retries is not None else 2
+        return StructuredLLM(
+            llm=self,
+            schema=schema,
+            method=method,  # type: ignore[arg-type]
+            include_raw=include_raw,
+            max_retries=retries,
+        )
