@@ -91,6 +91,35 @@ class Config(BaseModel):
     stream_include_thinking: bool = True  # 是否包含思考过程
     stream_include_tool_calls: bool = True  # 是否包含工具调用
 
+    # ==================== 2.0 新增 ====================
+
+    # Graph 配置
+    graph_max_steps: int = 50  # 单次执行最多经过多少节点（防死循环）
+    graph_recursion_limit: int = 25  # 同一节点最多重入次数
+    graph_max_concurrent_nodes: int = 3  # 并行节点最大并发数
+
+    # Checkpointer 配置
+    checkpoint_enabled: bool = True  # 是否启用 per-node checkpoint
+    checkpoint_backend: str = "json"  # "memory" | "json" | "sqlite"
+    checkpoint_dir: str = "memory/checkpoints"  # JsonFileCheckpointer 目录
+    checkpoint_db_path: str = "memory/checkpoints.db"  # SqliteCheckpointer 文件
+    checkpoint_keep_last_n: int = 100  # 单 thread 保留最近多少 checkpoint
+
+    # HITL 配置
+    hitl_enabled: bool = True  # 是否允许节点内调用 interrupt()
+    hitl_interrupt_ttl_seconds: int = 86400  # 中断后多久过期（24h）
+
+    # 结构化输出配置
+    structured_output_max_retries: int = 2  # schema 校验失败重试次数
+
+    # Eval-harness 配置
+    eval_enabled: bool = True
+    eval_output_dir: str = "memory/eval"
+    eval_default_parallel: int = 4
+    eval_judge_model: str = ""  # LLMAsJudge 默认用的模型；空时复用主 llm
+    eval_judge_base_url: str = ""
+    eval_judge_api_key: str = ""
+
     @classmethod
     def from_env(cls) -> "Config":
         """从环境变量创建配置"""

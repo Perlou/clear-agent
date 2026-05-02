@@ -39,6 +39,16 @@ class EventType(Enum):
     REFLECTION = "reflection"  # 反思过程
     PLAN = "plan"  # 计划生成
 
+    # Graph 节点事件（2.0 新增）
+    NODE_START = "node_start"  # 图节点开始执行
+    NODE_FINISH = "node_finish"  # 图节点执行完成
+    EDGE_TRAVERSED = "edge_traversed"  # 经过一条边（含条件路由结果）
+    CHECKPOINT_WRITTEN = "checkpoint_written"  # 写入一个 checkpoint
+
+    # HITL 事件（2.0 新增）
+    AGENT_INTERRUPTED = "agent_interrupted"  # interrupt() 触发
+    AGENT_RESUMED = "agent_resumed"  # resume(value=...) 续跑
+
 
 @dataclass
 class AgentEvent:
