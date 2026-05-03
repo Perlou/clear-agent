@@ -3,7 +3,7 @@
 > 🤖 生产级多智能体框架 —— 基于 OpenAI 原生 API，**v2.0 引入 StateGraph + Checkpoint + Human-in-the-Loop + 完整 RAG + 多层 Memory**，集成上下文工程、子代理、Skills、结构化输出、Eval-harness 等 25+ 核心能力。
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.0.0b1-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)]()
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 ## ✨ 核心特性
@@ -188,8 +188,10 @@ mypy clear_agent
 ## 🗺️ 路线图
 
 - **2.0-α**（已发版 ✅）：StateGraph + Checkpoint + HITL + 结构化输出 + Eval-harness + Retrieval spike
-- **2.0-β**（**当前** ✅）：完整 RAG pipeline、Memory 体系（Working/Semantic）、MemoryManager 重写、QdrantVectorStore、嵌入抽象
-- **2.0-RC**：基于 graph 原生的 multi-agent（supervisor/swarm/handoff）、MCP 协议、工具并行、真异步 OpenAI 客户端、Anthropic/Gemini 适配器补全、LCEL-lite
+- **2.0-β**（已发版 ✅）：完整 RAG pipeline、Memory 体系（Working/Semantic）、MemoryManager 重写、QdrantVectorStore、嵌入抽象
+- **2.0-RC**（已发版 ✅）：Multi-agent 范式包（supervisor/swarm/handoff）、MCP 协议（client/server）、Callbacks 协议（13 hooks）、工具并行、真异步 OpenAI 客户端、LCEL-lite Runnable + `|` 管道、TraceLogger SFT/DPO 训练数据导出
+- **2.0 GA**（**当前** ✅）：Resilience（Retry/Fallback/负载均衡）、Pydantic 自动 Tool schema 推导、Anthropic+Gemini 真异步路径、Multimodal（vision/audio）+ Prompt caching helpers
+- **2.1+**：Skill marketplace（远程加载 + 版本管理）、更多 provider 集成、性能优化迭代
 
 详见 [`project_docs/00-overview.md`](project_docs/00-overview.md) 与 [`project_docs/08-rag-memory-integration.md`](project_docs/08-rag-memory-integration.md)。
 

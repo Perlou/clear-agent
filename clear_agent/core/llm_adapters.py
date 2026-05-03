@@ -593,6 +593,106 @@ class AnthropicAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"Anthropic工具调用失败: {str(e)}")
 
+    # ==================== 真异步（GA-W2） ====================
+
+    def create_async_client(self) -> Any:
+        """创建 AsyncAnthropic 客户端"""
+        try:
+            from anthropic import AsyncAnthropic  # type: ignore
+        except ImportError:
+            raise ClearAgentException(
+                "Anthropic 异步调用需要安装：pip install clear-agent[anthropic]"
+            )
+        return AsyncAnthropic(
+            api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
+        )
+
+    async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
+        """真异步非流式调用 Anthropic"""
+        if not self._async_client:
+            self._async_client = self.create_async_client()
+        start_time = time.time()
+        system_content, converted_messages = self._convert_messages(messages)
+        try:
+            request_params = {
+                "model": self.model,
+                "messages": converted_messages,
+                "max_tokens": kwargs.pop("max_tokens", 4096),
+                **kwargs,
+            }
+            if system_content:
+                request_params["system"] = system_content
+            response = await self._async_client.messages.create(**request_params)
+            latency_ms = int((time.time() - start_time) * 1000)
+            content = ""
+            for block in response.content:
+                if getattr(block, "type", None) == "text":
+                    content += block.text
+            usage = {
+                "prompt_tokens": response.usage.input_tokens,
+                "completion_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            }
+            return LLMResponse(
+                content=content,
+                model=self.model,
+                usage=usage,
+                latency_ms=latency_ms,
+            )
+        except Exception as e:
+            raise ClearAgentException(f"Anthropic 异步调用失败: {str(e)}")
+
+    async def ainvoke_with_tools_async(
+        self, messages: List[Dict], tools: List[Dict], **kwargs
+    ) -> LLMToolResponse:
+        """真异步 Anthropic 工具调用"""
+        if not self._async_client:
+            self._async_client = self.create_async_client()
+        # 移除 OpenAI 风格的 tool_choice（Anthropic 用 native tool_choice 但参数名不同）
+        kwargs.pop("tool_choice", None)
+        system_content, converted_messages = self._convert_messages(messages)
+        start_time = time.time()
+        try:
+            request_params = {
+                "model": self.model,
+                "messages": converted_messages,
+                "tools": tools,
+                "max_tokens": kwargs.pop("max_tokens", 4096),
+                **kwargs,
+            }
+            if system_content:
+                request_params["system"] = system_content
+            response = await self._async_client.messages.create(**request_params)
+            latency_ms = int((time.time() - start_time) * 1000)
+            content = ""
+            tool_calls = []
+            for block in response.content:
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    content += block.text
+                elif btype == "tool_use":
+                    tool_calls.append(
+                        ToolCall(
+                            id=block.id,
+                            name=block.name,
+                            arguments=json.dumps(block.input),
+                        )
+                    )
+            usage = {
+                "prompt_tokens": response.usage.input_tokens,
+                "completion_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            }
+            return LLMToolResponse(
+                content=content if content else None,
+                tool_calls=tool_calls,
+                model=self.model,
+                usage=usage,
+                latency_ms=latency_ms,
+            )
+        except Exception as e:
+            raise ClearAgentException(f"Anthropic 异步工具调用失败: {str(e)}")
+
 
 class GeminiAdapter(BaseLLMAdapter):
     """Google Gemini适配器
@@ -809,6 +909,26 @@ class GeminiAdapter(BaseLLMAdapter):
 
         except Exception as e:
             raise ClearAgentException(f"Gemini工具调用失败: {str(e)}")
+
+    # ==================== 真异步（GA-W2） ====================
+
+    async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
+        """异步调用 Gemini
+
+        Gemini SDK 的 async API（``client.aio.models.generate_content``）
+        在 google-genai 不同版本间形态不同，统一通过 ``asyncio.to_thread`` 包装
+        同步方法 —— 至少不阻塞事件循环。
+        """
+        return await asyncio.to_thread(self.invoke, messages, **kwargs)
+
+    async def ainvoke_with_tools_async(
+        self, messages: List[Dict], tools: List[Dict], **kwargs
+    ) -> LLMToolResponse:
+        """异步 Gemini 工具调用（同上，to_thread 包装）"""
+        kwargs.pop("tool_choice", None)  # Gemini 不用 OpenAI 风格的 tool_choice
+        return await asyncio.to_thread(
+            self.invoke_with_tools, messages, tools, **kwargs
+        )
 
 
 def create_adapter(

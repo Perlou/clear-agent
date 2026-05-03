@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clear-agent"
-version = "2.0.0b1"
-description = "多智能体框架 - 2.0-β: StateGraph + Checkpoint + HITL + RAG + Memory（移植自 AntonAgents） + 结构化输出 + Eval-harness"
+version = "2.0.0"
+description = "多智能体框架 2.0 GA - StateGraph + RAG + Memory + Multi-agent + MCP + LCEL + Resilience（Retry/Fallback）+ Pydantic Tool 自动推导 + Multimodal + Prompt caching + Eval-harness + 结构化输出"
 readme = "README.md"
 license = {text = "CC-BY-NC-SA-4.0"}
 authors = [
