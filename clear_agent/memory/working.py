@@ -11,7 +11,7 @@ Original: anton_agents/memory/types/working.py
 - 检索 = TF-IDF 向量（sklearn 可选）+ 关键词匹配 + 时间衰减加权
 - 三种 forget 策略：``importance_based / time_based / capacity_based``
 
-不持久化 —— 进程结束即销毁。需要长期记忆请用 ``SemanticMemory`` (2.0-β/W3)。
+不持久化 —— 进程结束即销毁。需要长期记忆请用 ``SemanticMemory`` (后续版本)。
 """
 
 from __future__ import annotations

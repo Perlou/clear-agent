@@ -124,7 +124,6 @@ class OpenAIAdapter(BaseLLMAdapter):
 
             latency_ms = int((time.time() - start_time) * 1000)
 
-            # 提取内容和推理过程
             choice = response.choices[0]
             content = choice.message.content or ""
             reasoning_content = None
@@ -138,7 +137,6 @@ class OpenAIAdapter(BaseLLMAdapter):
                 elif hasattr(choice, "reasoning_content"):
                     reasoning_content = choice.reasoning_content
 
-            # 提取usage信息
             usage = {}
             if hasattr(response, "usage") and response.usage:
                 usage = {
@@ -178,7 +176,6 @@ class OpenAIAdapter(BaseLLMAdapter):
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
 
-                    # 提取内容
                     if delta.content:
                         collected_content.append(delta.content)
                         yield delta.content
@@ -193,7 +190,6 @@ class OpenAIAdapter(BaseLLMAdapter):
                                 reasoning_content = ""
                             reasoning_content += delta.reasoning_content
 
-                # 提取usage（流式最后一个chunk可能包含）
                 if hasattr(chunk, "usage") and chunk.usage:
                     usage = {
                         "prompt_tokens": chunk.usage.prompt_tokens,
@@ -236,7 +232,6 @@ class OpenAIAdapter(BaseLLMAdapter):
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
 
-                    # 提取内容
                     if delta.content:
                         collected_content.append(delta.content)
                         yield delta.content
@@ -251,7 +246,6 @@ class OpenAIAdapter(BaseLLMAdapter):
                                 reasoning_content = ""
                             reasoning_content += delta.reasoning_content
 
-                # 提取usage（流式最后一个chunk可能包含）
                 if hasattr(chunk, "usage") and chunk.usage:
                     usage = {
                         "prompt_tokens": chunk.usage.prompt_tokens,
@@ -326,7 +320,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"OpenAI Function Calling调用失败: {str(e)}")
 
-    # ==================== 真异步（2.0-RC RC-W3） ====================
+    # ==================== 真异步 ====================
 
     async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
         """真异步非流式（用 ``AsyncOpenAI``，不走线程池）"""
@@ -455,7 +449,6 @@ class AnthropicAdapter(BaseLLMAdapter):
         system_content, converted_messages = self._convert_messages(messages)
 
         try:
-            # 构建请求参数
             request_params = {
                 "model": self.model,
                 "messages": converted_messages,
@@ -469,7 +462,6 @@ class AnthropicAdapter(BaseLLMAdapter):
 
             latency_ms = int((time.time() - start_time) * 1000)
 
-            # 提取内容
             content = ""
             if response.content:
                 for block in response.content:
@@ -593,7 +585,7 @@ class AnthropicAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"Anthropic工具调用失败: {str(e)}")
 
-    # ==================== 真异步（GA-W2） ====================
+    # ==================== 真异步 ====================
 
     def create_async_client(self) -> Any:
         """创建 AsyncAnthropic 客户端"""
@@ -760,7 +752,6 @@ class GeminiAdapter(BaseLLMAdapter):
 
             latency_ms = int((time.time() - start_time) * 1000)
 
-            # 提取内容
             content = response.text if hasattr(response, "text") else ""
 
             # 提取usage
@@ -910,7 +901,7 @@ class GeminiAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"Gemini工具调用失败: {str(e)}")
 
-    # ==================== 真异步（GA-W2） ====================
+    # ==================== 真异步 ====================
 
     async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
         """异步调用 Gemini

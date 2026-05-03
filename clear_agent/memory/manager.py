@@ -1,6 +1,6 @@
 """MemoryManager —— 协调多种记忆子系统的统一入口
 
-**重写说明**（详见 project_docs/07-anton-agents-port.md §2.2）：
+**重写说明**：
 AntonAgents 的 ``manager.py`` 源文件 0 字节但被 ``__init__.py`` import，
 **说明从未跑通**。本模块是 ClearAgent 自研重写，提供：
 
@@ -31,9 +31,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import BaseMemory, MemoryItem
 
-
 logger = logging.getLogger(__name__)
-
 
 class MemoryManager:
     """多记忆子系统协调器
@@ -231,6 +229,5 @@ class MemoryManager:
             "by_type": by_type,
             "registered_types": list(self.memories.keys()),
         }
-
 
 __all__ = ["MemoryManager"]

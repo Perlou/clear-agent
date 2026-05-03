@@ -7,7 +7,6 @@
 - ``LLMAsJudge``：用另一个 LLM 当裁判，复用 ``with_structured_output`` 让评分本身也是结构化输出
 - ``Custom``：用户传 ``(predicted, expected, example) -> EvalResult``
 
-详见 project_docs/05-eval-harness.md
 """
 
 from __future__ import annotations
@@ -22,9 +21,7 @@ if TYPE_CHECKING:
     from ..core.llm import ClearAgentLLM
     from .dataset import Example
 
-
 # ==================== 核心数据 ====================
-
 
 @dataclass
 class EvalResult:
@@ -50,9 +47,7 @@ class EvalResult:
             "metadata": dict(self.metadata),
         }
 
-
 # ==================== Base ====================
-
 
 class BaseEvaluator(ABC):
     """评估器基类
@@ -70,9 +65,7 @@ class BaseEvaluator(ABC):
     def name(self) -> str:
         return self.__class__.__name__
 
-
 # ==================== ExactMatch ====================
-
 
 def _normalize(text: Any, *, case_sensitive: bool, normalize_whitespace: bool) -> str:
     s = "" if text is None else str(text)
@@ -81,7 +74,6 @@ def _normalize(text: Any, *, case_sensitive: bool, normalize_whitespace: bool) -
     if not case_sensitive:
         s = s.lower()
     return s
-
 
 class ExactMatch(BaseEvaluator):
     """完全匹配；可选大小写与空白归一化
@@ -117,9 +109,7 @@ class ExactMatch(BaseEvaluator):
             feedback="" if match else f"Expected '{e}', got '{p}'",
         )
 
-
 # ==================== Contains ====================
-
 
 class Contains(BaseEvaluator):
     """子串匹配：``expected`` 是否在 ``predicted`` 中出现
@@ -160,9 +150,7 @@ class Contains(BaseEvaluator):
             feedback="" if match else f"'{e}' not found in predicted",
         )
 
-
 # ==================== LLMAsJudge ====================
-
 
 class LLMAsJudge(BaseEvaluator):
     """用另一个 LLM 给开放式回答打分
@@ -222,7 +210,6 @@ class LLMAsJudge(BaseEvaluator):
             metadata={"judge_model": getattr(self.llm, "model", "")},
         )
 
-
 def _default_judge_schema() -> Type["BaseModel"]:
     """默认 judge schema（懒加载 pydantic 避免顶层 import 失败）"""
     from pydantic import BaseModel, Field
@@ -235,9 +222,7 @@ def _default_judge_schema() -> Type["BaseModel"]:
 
     return _DefaultJudgeSchema
 
-
 # ==================== Custom ====================
-
 
 class Custom(BaseEvaluator):
     """用户自定义函数 evaluator
@@ -277,7 +262,6 @@ class Custom(BaseEvaluator):
         raise TypeError(
             f"Custom evaluator fn 必须返回 EvalResult / float / bool，得到 {type(out)}"
         )
-
 
 __all__ = [
     "EvalResult",

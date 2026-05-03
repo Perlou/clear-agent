@@ -1,4 +1,4 @@
-"""Agent基类"""
+"""Agent 基类"""
 
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING, AsyncGenerator
@@ -15,19 +15,7 @@ if TYPE_CHECKING:
 
 
 class Agent(ABC):
-    """Agent基类
-
-    集成能力：
-    - HistoryManager: 历史管理与压缩
-    - ObservationTruncator: 工具输出截断
-    - TraceLogger: 可观测性（JSONL + HTML）
-    - ToolRegistry: 工具管理（可选）
-    - SkillLoader: 知识外化（可选）
-
-    向后兼容：
-    - self._history 属性仍然可用（通过 property 代理）
-    - add_message/clear_history/get_history 方法保持不变
-    """
+    """Agent 基类，集成历史管理、工具输出截断、可观测性、Skills、会话持久化等能力"""
 
     def __init__(
         self,
@@ -41,11 +29,9 @@ class Agent(ABC):
         self.llm = llm
         self.system_prompt = system_prompt
         self.config = config or Config()
-
-        # 工具注册表（可选）
         self.tool_registry = tool_registry
 
-        # 新增：上下文工程组件
+        # 上下文工程
         from clear_agent.context.history import HistoryManager
         from clear_agent.context.truncator import ObservationTruncator
 
@@ -53,7 +39,6 @@ class Agent(ABC):
             min_retain_rounds=self.config.min_retain_rounds,
             compression_threshold=self.config.compression_threshold,
         )
-
         self.truncator = ObservationTruncator(
             max_lines=self.config.tool_output_max_lines,
             max_bytes=self.config.tool_output_max_bytes,
@@ -61,13 +46,13 @@ class Agent(ABC):
             output_dir=self.config.tool_output_dir,
         )
 
-        # 新增：Token 计数器（缓存 + 增量计算）
+        # Token 计数器（缓存 + 增量）
         from ..context.token_counter import TokenCounter
 
         self.token_counter = TokenCounter(model=self.llm.model)
-        self._history_token_count = 0  # 缓存历史 Token 数
+        self._history_token_count = 0
 
-        # 新增：可观测性组件
+        # 可观测性
         from clear_agent.observability import TraceLogger
 
         self.trace_logger: Optional[TraceLogger] = None
@@ -77,33 +62,28 @@ class Agent(ABC):
                 sanitize=self.config.trace_sanitize,
                 html_include_raw_response=self.config.trace_html_include_raw_response,
             )
-            # 记录会话开始
             self.trace_logger.log_event(
                 "session_start",
                 {
                     "agent_name": self.name,
                     "agent_type": self.__class__.__name__,
-                    "config": self.config.dict(),
+                    "config": self.config.model_dump(),
                 },
             )
 
-        # 新增：Skills 知识外化组件
+        # Skills 知识外化
         from pathlib import Path
         from clear_agent.skills import SkillLoader
 
         self.skill_loader: Optional[SkillLoader] = None
         if self.config.skills_enabled:
-            skills_path = Path(self.config.skills_dir)
-            self.skill_loader = SkillLoader(skills_dir=skills_path)
-
-            # 自动注册 SkillTool
+            self.skill_loader = SkillLoader(skills_dir=Path(self.config.skills_dir))
             if self.config.skills_auto_register and self.tool_registry:
                 from clear_agent.tools.builtin.skill_tool import SkillTool
 
-                skill_tool = SkillTool(skill_loader=self.skill_loader)
-                self.tool_registry.register_tool(skill_tool)
+                self.tool_registry.register_tool(SkillTool(skill_loader=self.skill_loader))
 
-        # 新增：会话持久化组件
+        # 会话持久化
         from datetime import datetime
         from .session_store import SessionStore
 
@@ -111,7 +91,6 @@ class Agent(ABC):
         if self.config.session_enabled:
             self.session_store = SessionStore(session_dir=self.config.session_dir)
 
-        # 会话元数据（用于保存）
         self._session_metadata = {
             "created_at": datetime.now().isoformat(),
             "total_tokens": 0,
@@ -120,36 +99,31 @@ class Agent(ABC):
         }
         self._start_time = datetime.now()
 
-        # 新增：子代理机制组件
+        # 子代理 / TodoWrite / DevLog 内置工具自动注册
         if self.config.subagent_enabled and self.tool_registry:
             self._register_task_tool()
-
-        # 新增：TodoWrite 进度管理组件
         if self.config.todowrite_enabled and self.tool_registry:
             self._register_todowrite_tool()
-
-        # 新增：DevLog 开发日志组件
         if self.config.devlog_enabled and self.tool_registry:
             self._register_devlog_tool()
 
     @property
     def _history(self) -> List[Message]:
-        """向后兼容：通过 property 代理到 HistoryManager"""
+        """向后兼容代理：访问历史"""
         return self.history_manager.get_history()
 
     @_history.setter
     def _history(self, value: List[Message]):
-        """向后兼容：允许直接设置历史"""
         self.history_manager.clear()
         for msg in value:
             self.history_manager.append(msg)
 
     @abstractmethod
     def run(self, input_text: str, **kwargs) -> str:
-        """运行Agent（同步版本）"""
+        """运行 Agent（同步）"""
         pass
 
-    # ==================== 异步生命周期方法 ====================
+    # ==================== 异步生命周期 ====================
 
     async def arun(
         self,
@@ -160,44 +134,21 @@ class Agent(ABC):
         on_error: LifecycleHook = None,
         **kwargs,
     ) -> str:
+        """异步执行 Agent；默认走线程池包装 ``run()``，子类可覆写真异步实现
+
+        触发 4 个生命周期 hook：``on_start`` / ``on_step`` / ``on_finish`` / ``on_error``。
         """
-        异步执行 Agent（基础版本）
-
-        默认实现：在线程池中运行同步 run() 方法
-        子类可以覆盖此方法实现更复杂的异步逻辑（如工具并行）
-
-        Args:
-            input_text: 输入文本
-            on_start: Agent 开始执行时的钩子
-            on_step: 每个推理步骤的钩子
-            on_finish: Agent 执行完成时的钩子
-            on_error: 发生错误时的钩子
-            **kwargs: 其他参数
-
-        Returns:
-            执行结果
-
-        Example:
-            >>> agent = SimpleAgent(...)
-            >>> result = await agent.arun("Hello", on_start=my_hook)
-        """
-        # 触发开始事件
         await self._emit_event(EventType.AGENT_START, on_start, input_text=input_text)
 
         try:
-            # 默认实现：在线程池中运行同步 run()
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None, lambda: self.run(input_text, **kwargs)
             )
-
-            # 触发完成事件
             await self._emit_event(EventType.AGENT_FINISH, on_finish, result=result)
-
             return result
 
         except Exception as e:
-            # 触发错误事件
             await self._emit_event(
                 EventType.AGENT_ERROR,
                 on_error,

@@ -318,7 +318,6 @@ class PlanSolveAgent(Agent):
             enable_tool_calling: 是否启用工具调用
             max_tool_iterations: 最大工具调用迭代次数
         """
-        # 传递 tool_registry 到基类
         super().__init__(name, llm, system_prompt, config, tool_registry=tool_registry)
 
         self.planner = Planner(self.llm, planner_prompt)
@@ -331,7 +330,7 @@ class PlanSolveAgent(Agent):
         )
 
     def as_graph(self, checkpointer=None):
-        """返回等价的 Plan-Solve StateGraph（2.0 新增）"""
+        """返回等价的 Plan-Solve StateGraph"""
         from ._plan_solve_graph import build_plan_solve_graph
 
         return build_plan_solve_graph(

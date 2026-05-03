@@ -14,7 +14,7 @@
 pip install clear-agent[mcp]
 ```
 
-详见 ``docs/mcp-guide.md`` 与 ``project_docs/07-anton-agents-port.md`` §5。
+详见 ``docs/mcp-guide.md`` 
 """
 
 from .adapter import (

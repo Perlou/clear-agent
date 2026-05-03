@@ -1,7 +1,7 @@
 """ClearAgent retrieval —— 嵌入与文档存储
 
-2.0-α (W4) spike：从 AntonAgents 移植 Embedding + DocumentStore 打底，
-为 2.0-β 完整 RAG / Memory 套件做准备。
+嵌入 + 文档存储模块（移植自 AntonAgents）Embedding + DocumentStore 打底，
+。
 
 公共入口：
 
@@ -15,7 +15,6 @@ from clear_agent.retrieval import (
 )
 ```
 
-详见 project_docs/07-anton-agents-port.md
 """
 
 from .embeddings import (

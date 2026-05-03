@@ -8,7 +8,6 @@
 
 并发执行用 ``ThreadPoolExecutor``（不强求异步——多数评估场景 IO 密集，线程足够）。
 
-详见 project_docs/05-eval-harness.md
 """
 
 from __future__ import annotations
@@ -26,9 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from .dataset import Dataset, Example
 from .evaluator import BaseEvaluator, EvalResult
 
-
 # ==================== 数据结构 ====================
-
 
 @dataclass
 class ExampleRunResult:
@@ -65,7 +62,6 @@ class ExampleRunResult:
         if self.error:
             d["error"] = self.error
         return d
-
 
 @dataclass
 class EvalReport:
@@ -152,9 +148,7 @@ class EvalReport:
         )
         return failed[:k]
 
-
 # ==================== 默认 extract_predicted ====================
-
 
 def _default_extract_predicted(output: Any) -> Any:
     """从 graph / callable 输出中提取 predicted 字段
@@ -177,9 +171,7 @@ def _default_extract_predicted(output: Any) -> Any:
         return output
     return output
 
-
 # ==================== 内部 helpers ====================
-
 
 def _extract_tokens(output: Any) -> int:
     if isinstance(output, dict):
@@ -189,7 +181,6 @@ def _extract_tokens(output: Any) -> int:
         except (TypeError, ValueError):
             return 0
     return 0
-
 
 def _invoke_target(target: Any, ex: Example) -> Any:
     """支持 CompiledGraph (.invoke) / callable / 任意带 invoke 方法的对象"""
@@ -204,9 +195,7 @@ def _invoke_target(target: Any, ex: Example) -> Any:
         return target(ex.input)
     raise TypeError(f"target 必须是 CompiledGraph / callable，得到 {type(target)}")
 
-
 # ==================== 主入口 ====================
-
 
 def run_eval(
     target: Any,
@@ -307,9 +296,7 @@ def run_eval(
 
     return report
 
-
 # ==================== 落盘 ====================
-
 
 def _write_results_jsonl(report: EvalReport) -> None:
     p = report.output_dir / "results.jsonl"
@@ -317,11 +304,9 @@ def _write_results_jsonl(report: EvalReport) -> None:
         for r in report.results:
             f.write(json.dumps(r.to_dict(), ensure_ascii=False, default=str) + "\n")
 
-
 def _write_report_md(report: EvalReport) -> None:
     p = report.output_dir / "report.md"
     p.write_text(_format_report_md(report), encoding="utf-8")
-
 
 def _format_report_md(report: EvalReport) -> str:
     lines: List[str] = []
@@ -379,11 +364,9 @@ def _format_report_md(report: EvalReport) -> str:
 
     return "\n".join(lines) + "\n"
 
-
 def _short(v: Any, n: int = 60) -> str:
     s = str(v).replace("|", "\\|").replace("\n", " ")
     return s if len(s) <= n else s[: n - 1] + "…"
-
 
 __all__ = [
     "run_eval",

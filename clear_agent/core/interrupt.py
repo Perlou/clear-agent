@@ -12,7 +12,7 @@
 - ``GraphInterrupt`` 继承 BaseException 而非 Exception，避免被节点的
   ``try/except Exception`` 误吞
 
-详见 project_docs/03-hitl-guide.md
+
 """
 
 from __future__ import annotations

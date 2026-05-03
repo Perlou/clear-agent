@@ -45,13 +45,12 @@ class SimpleAgent(Agent):
             enable_tool_calling: 是否启用工具调用（只有在提供tool_registry时生效）
             max_tool_iterations: 最大工具调用迭代次数
         """
-        # 传递 tool_registry 到基类
         super().__init__(name, llm, system_prompt, config, tool_registry=tool_registry)
         self.enable_tool_calling = enable_tool_calling and tool_registry is not None
         self.max_tool_iterations = max_tool_iterations
 
     def as_graph(self, checkpointer=None):
-        """返回等价的 Simple StateGraph（2.0 新增）
+        """返回等价的 Simple StateGraph
 
         新代码推荐使用此方法获取 graph 实例，享受 checkpoint/resume/HITL 能力。
         旧 ``run()`` 接口保持向后兼容，行为不变。

@@ -15,7 +15,6 @@ JSONL 格式（每行一个 example）：
 - ``tags``（可选）：报告分组聚合
 - ``metadata``（可选）：透传到报告
 
-详见 project_docs/05-eval-harness.md
 """
 
 from __future__ import annotations
@@ -25,7 +24,6 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Union
-
 
 @dataclass
 class Example:
@@ -65,7 +63,6 @@ class Example:
             "tags": list(self.tags),
             "metadata": dict(self.metadata),
         }
-
 
 class Dataset:
     """Eval 数据集 —— 内存中的 ``Example`` 序列
@@ -147,6 +144,5 @@ class Dataset:
         with p.open("w", encoding="utf-8") as f:
             for ex in self.examples:
                 f.write(json.dumps(ex.to_dict(), ensure_ascii=False) + "\n")
-
 
 __all__ = ["Example", "Dataset"]

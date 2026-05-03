@@ -65,7 +65,7 @@ class MemoryConfig(BaseModel):
     working_memory_tokens: int = 2000
     working_memory_ttl_minutes: int = 120
 
-    # PerceptualMemory 专属（2.0-RC+ 才会用到，留字段不破坏）
+    # PerceptualMemory 专属（后续版本会用到，留字段不破坏）
     perceptual_memory_modalities: List[str] = ["text", "image", "audio", "video"]
 
 

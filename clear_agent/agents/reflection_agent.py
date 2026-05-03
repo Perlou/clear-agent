@@ -95,7 +95,6 @@ class ReflectionAgent(Agent):
 
 请始终保持批判性思维，追求更高质量的输出。"""
 
-        # 传递 tool_registry 到基类
         super().__init__(
             name,
             llm,
@@ -109,7 +108,7 @@ class ReflectionAgent(Agent):
         self.max_tool_iterations = max_tool_iterations
 
     def as_graph(self, checkpointer=None):
-        """返回等价的 Reflection StateGraph（2.0 新增）"""
+        """返回等价的 Reflection StateGraph"""
         from ._reflection_graph import build_reflection_graph
 
         return build_reflection_graph(

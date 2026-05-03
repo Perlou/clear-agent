@@ -19,7 +19,6 @@ report = run_eval(
 print(f"Pass rate: {report.pass_rate() * 100:.1f}%")
 ```
 
-详见 project_docs/05-eval-harness.md
 """
 
 from .dataset import Dataset, Example

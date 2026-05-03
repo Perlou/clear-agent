@@ -50,7 +50,7 @@ try:
 except ImportError:
     _GRAPH_AVAILABLE = False
 
-# 2.0-RC multi-agent 范式包（依赖 graph）
+# Multi-agent 范式包（依赖 graph）
 try:
     from .multiagent import (
         HANDOFF_END,

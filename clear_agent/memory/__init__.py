@@ -1,6 +1,6 @@
 """ClearAgent 记忆系统
 
-2.0-β 完整版：
+完整模块：
 - ``MemoryItem`` / ``MemoryConfig`` / ``BaseMemory`` 抽象（base.py）
 - ``WorkingMemory`` 短期记忆（working.py）
 - ``SemanticMemory`` + ``Entity`` / ``Relation`` 长期语义记忆（semantic.py）

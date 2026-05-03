@@ -70,7 +70,6 @@ class ReActAgent(Agent):
             config: 配置对象
             max_steps: 最大执行步数
         """
-        # 传递 tool_registry 到基类
         super().__init__(
             name,
             llm,
@@ -81,7 +80,6 @@ class ReActAgent(Agent):
 
         self.max_steps = max_steps
 
-        # 内置工具标记（用于特殊处理）
         self._builtin_tools = {"Thought", "Finish"}
 
     def add_tool(self, tool):
@@ -89,7 +87,7 @@ class ReActAgent(Agent):
         self.tool_registry.register_tool(tool)
 
     def as_graph(self, checkpointer=None):
-        """返回等价的 ReAct StateGraph（2.0 新增）
+        """返回等价的 ReAct StateGraph
 
         新代码推荐使用此方法获取 graph 实例，可享受 checkpoint / resume / stream / HITL 能力。
         旧 ``run()`` / ``arun()`` 接口保持向后兼容，行为不变。
@@ -538,7 +536,6 @@ class ReActAgent(Agent):
         """
         session_start_time = datetime.now()
 
-        # 触发开始事件
         await self._emit_event(EventType.AGENT_START, on_start, input_text=input_text)
 
         try:

@@ -48,7 +48,6 @@ class ClearAgentLLM:
             max_tokens: 最大token数
             timeout: 超时时间（秒），默认从 LLM_TIMEOUT 读取，默认60秒
         """
-        # 加载配置
         self.model = model or os.getenv("LLM_MODEL_ID")
         self.api_key = api_key or os.getenv("LLM_API_KEY")
         self.base_url = base_url or os.getenv("LLM_BASE_URL")
@@ -58,7 +57,6 @@ class ClearAgentLLM:
         self.max_tokens = max_tokens
         self.kwargs = kwargs
 
-        # 验证必要参数
         if not self.model:
             raise ClearAgentException(
                 "必须提供模型名称（model参数或LLM_MODEL_ID环境变量）"
@@ -72,7 +70,6 @@ class ClearAgentLLM:
                 "必须提供服务地址（base_url参数或LLM_BASE_URL环境变量）"
             )
 
-        # 创建适配器（自动检测）
         self._adapter: BaseLLMAdapter = create_adapter(
             api_key=self.api_key,
             base_url=self.base_url,
@@ -80,7 +77,6 @@ class ClearAgentLLM:
             model=self.model,
         )
 
-        # 最后一次调用的统计信息（用于流式调用）
         self.last_call_stats: Optional[StreamStats] = None
 
     def think(
@@ -102,7 +98,6 @@ class ClearAgentLLM:
         """
         print(f"🧠 正在调用 {self.model} 模型...")
 
-        # 准备参数
         kwargs = {
             "temperature": temperature if temperature is not None else self.temperature,
         }
@@ -116,7 +111,6 @@ class ClearAgentLLM:
                 yield chunk
             print()  # 换行
 
-            # 保存统计信息
             if hasattr(self._adapter, "last_stats"):
                 self.last_call_stats = self._adapter.last_stats
 
@@ -143,7 +137,6 @@ class ClearAgentLLM:
             if response.reasoning_content:  # thinking model的推理过程
                 print(response.reasoning_content)
         """
-        # 合并参数
         call_kwargs = {
             "temperature": kwargs.pop("temperature", self.temperature),
         }
@@ -170,7 +163,6 @@ class ClearAgentLLM:
         """
         temperature = kwargs.pop("temperature", None)
 
-        # 准备参数
         call_kwargs = {}
         if self.max_tokens:
             call_kwargs["max_tokens"] = kwargs.pop("max_tokens", self.max_tokens)
@@ -181,7 +173,6 @@ class ClearAgentLLM:
         ):
             yield chunk
 
-        # 保存统计信息
         if hasattr(self._adapter, "last_stats"):
             self.last_call_stats = self._adapter.last_stats
 
@@ -213,7 +204,6 @@ class ClearAgentLLM:
         Raises:
             ClearAgentException: 当 LLM 调用失败时
         """
-        # 合并参数
         call_kwargs = {
             "temperature": kwargs.pop("temperature", self.temperature),
             "tool_choice": tool_choice,
@@ -243,7 +233,6 @@ class ClearAgentLLM:
             response = await llm.ainvoke([{"role": "user", "content": "你好"}])
             print(response.content)
         """
-        # 合并参数
         call_kwargs = {
             "temperature": kwargs.pop("temperature", self.temperature),
         }
@@ -251,7 +240,7 @@ class ClearAgentLLM:
             call_kwargs["max_tokens"] = kwargs.pop("max_tokens", self.max_tokens)
         call_kwargs.update(kwargs)
 
-        # 优先 adapter 的真异步路径（2.0-RC RC-W3）
+        # 优先 adapter 的真异步路径
         async_fn = getattr(self._adapter, "ainvoke_async", None)
         if callable(async_fn):
             return await async_fn(messages, **call_kwargs)
@@ -283,7 +272,6 @@ class ClearAgentLLM:
         async for chunk in self._adapter.astream_invoke(messages, **kwargs):
             yield chunk
 
-        # 保存统计信息
         if hasattr(self._adapter, "last_stats"):
             self.last_call_stats = self._adapter.last_stats
 
@@ -316,7 +304,7 @@ class ClearAgentLLM:
             call_kwargs["max_tokens"] = kwargs.pop("max_tokens", self.max_tokens)
         call_kwargs.update(kwargs)
 
-        # 优先 adapter 真异步路径（2.0-RC RC-W3）
+        # 优先 adapter 真异步路径
         async_fn = getattr(self._adapter, "ainvoke_with_tools_async", None)
         if callable(async_fn):
             return await async_fn(messages, tools, **call_kwargs)
@@ -327,7 +315,7 @@ class ClearAgentLLM:
             None, lambda: self.invoke_with_tools(messages, tools, tool_choice, **kwargs)
         )
 
-    # ==================== 结构化输出（2.0 新增） ====================
+    # ==================== 结构化输出 ====================
 
     def with_structured_output(
         self,

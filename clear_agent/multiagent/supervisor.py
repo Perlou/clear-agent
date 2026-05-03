@@ -26,7 +26,6 @@
 worker 是任意 ``Callable[[state], partial_state]`` 形式（即标准 graph node）。
 用户可以包装 ``Agent.run`` / ``build_*_graph().invoke`` 适配该签名。
 
-详见 plan §三 "Multi-agent 范式包"。
 """
 
 from __future__ import annotations
@@ -55,9 +54,7 @@ from .handoff import HANDOFF_END
 if TYPE_CHECKING:
     pass
 
-
 # ==================== State ====================
-
 
 class SupervisorState(TypedDict, total=False):
     """中心化 supervisor 模式的标准 state
@@ -76,9 +73,7 @@ class SupervisorState(TypedDict, total=False):
     max_handoffs: int
     result: Optional[Any]
 
-
 # ==================== 主入口 ====================
-
 
 def build_supervisor_graph(
     supervisor: Callable[[Dict[str, Any]], Dict[str, Any]],
@@ -172,6 +167,5 @@ def build_supervisor_graph(
         g.add_edge(name, "supervisor")
 
     return g.compile(checkpointer=checkpointer)
-
 
 __all__ = ["SupervisorState", "build_supervisor_graph"]

@@ -3,7 +3,7 @@
 提供 ``approval`` / ``edit_state`` / ``validate_tool_args`` 三个 helper，
 都是 ``interrupt(payload)`` 的薄包装 + 标准化的 payload schema。
 
-详见 project_docs/03-hitl-guide.md
+
 """
 
 from __future__ import annotations

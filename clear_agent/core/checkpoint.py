@@ -1,6 +1,6 @@
 """Checkpointer 协议与实现
 
-为 ClearAgent 2.0 StateGraph 提供 per-node 状态快照与恢复能力。
+为 ClearAgent StateGraph 提供 per-node 状态快照与恢复能力。
 
 设计要点：
 - BaseCheckpointer 抽象，支持同步/异步两套接口
@@ -8,7 +8,7 @@
 - JsonFileCheckpointer / SqliteCheckpointer 在 W2 实现
 - thread_id 隔离不同会话；checkpoint_id 单调递增（uuid7 时间排序友好）
 
-详见：project_docs/02-checkpoint-and-resume.md
+
 """
 
 from __future__ import annotations

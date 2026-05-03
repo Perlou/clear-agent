@@ -9,7 +9,7 @@
 3. **Handoff** 原语 —— 给 LLM 提供 ``transfer_to_*`` 工具集，让 agent 自己决定移交
    - ``Handoff`` / ``make_handoff_tools`` / ``parse_handoff_from_tool_calls``
 
-详见 plan §三 "Multi-agent 范式包" 与 ``project_docs/00-overview.md``。
+详见 plan §三 "Multi-agent 范式包" 
 """
 
 from .handoff import (

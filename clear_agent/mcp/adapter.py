@@ -8,7 +8,6 @@
 - (反向) ``MCPServer.export_tools(registry)``：把 ClearAgent ToolRegistry 转成
   MCP server 期望的 schema 列表（让 Cursor / Claude Desktop 调用 ClearAgent 工具）
 
-详见 ``project_docs/07-anton-agents-port.md`` §5（MCP 协议引入）。
 """
 
 from __future__ import annotations
@@ -21,10 +20,8 @@ from ..core.exceptions import ClearAgentException
 from ..tools.base import Tool, ToolParameter
 from ..tools.response import ToolResponse
 
-
 class MCPException(ClearAgentException):
     """MCP 协议相关错误"""
-
 
 class MCPToolAdapter(Tool):
     """把单个 MCP tool 包装为 ClearAgent ``Tool``
@@ -93,7 +90,6 @@ class MCPToolAdapter(Tool):
                 message=f"MCP tool '{self.name}' 调用失败: {e}",
             )
 
-
 def mcp_tool_to_clear_agent(
     mcp_tool: Any,
     call_fn: Callable[[str, Dict[str, Any]], Any],
@@ -121,7 +117,6 @@ def mcp_tool_to_clear_agent(
         call_fn=call_fn,
     )
 
-
 def clear_agent_tool_to_mcp_schema(tool: Tool) -> Dict[str, Any]:
     """把 ClearAgent ``Tool`` 转为 MCP server 期望的 tool descriptor
 
@@ -136,7 +131,6 @@ def clear_agent_tool_to_mcp_schema(tool: Tool) -> Dict[str, Any]:
         "inputSchema": fn.get("parameters") or {"type": "object", "properties": {}},
     }
 
-
 def _to_snake(name: str) -> str:
     """``inputSchema`` -> ``input_schema``（驼峰转下划线）"""
     out = []
@@ -145,7 +139,6 @@ def _to_snake(name: str) -> str:
             out.append("_")
         out.append(ch.lower())
     return "".join(out)
-
 
 __all__ = [
     "MCPException",

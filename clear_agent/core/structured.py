@@ -10,7 +10,6 @@
 
 所有 method 在解析失败时按 ``max_retries`` 自动重试（把错误信息追加到对话让 LLM 修正）。
 
-详见 project_docs/04-structured-output.md
 """
 
 from __future__ import annotations
@@ -40,14 +39,11 @@ from .llm_response import LLMResponse, LLMToolResponse
 if TYPE_CHECKING:
     from .llm import ClearAgentLLM
 
-
 T = TypeVar("T", bound=BaseModel)
 
 Method = Literal["auto", "function_calling", "json_mode", "json_schema"]
 
-
 # ==================== 异常 ====================
-
 
 class StructuredOutputError(ClearAgentException):
     """结构化输出在 ``max_retries`` 次重试后仍未成功"""
@@ -56,9 +52,7 @@ class StructuredOutputError(ClearAgentException):
         super().__init__(message)
         self.last_error = last_error
 
-
 # ==================== 自动 method 选择 ====================
-
 
 def _auto_method(model: str, base_url: Optional[str]) -> str:
     """根据 model + base_url 选最合适的 method
@@ -78,9 +72,7 @@ def _auto_method(model: str, base_url: Optional[str]) -> str:
     # 默认走 function_calling（Anthropic / DeepSeek / Qwen / Kimi / Ollama 均支持）
     return "function_calling"
 
-
 # ==================== schema 工具 ====================
-
 
 def _schema_to_function(schema: Type[BaseModel]) -> Dict[str, Any]:
     """把 Pydantic 模型转成 OpenAI function-calling schema"""
@@ -93,7 +85,6 @@ def _schema_to_function(schema: Type[BaseModel]) -> Dict[str, Any]:
         },
     }
 
-
 def _strip_json_fence(text: str) -> str:
     """剥掉 ```json ... ``` 之类的代码围栏"""
     text = (text or "").strip()
@@ -101,7 +92,6 @@ def _strip_json_fence(text: str) -> str:
     if fence:
         return fence.group(1).strip()
     return text
-
 
 def _extract_first_json_object(text: str) -> Optional[str]:
     """宽容兜底：从一段杂文里抽取第一段 ``{...}``，不保证完美"""
@@ -118,9 +108,7 @@ def _extract_first_json_object(text: str) -> Optional[str]:
         return m.group(0)
     return None
 
-
 # ==================== 核心 StructuredLLM ====================
-
 
 class StructuredLLM:
     """让 ``ClearAgentLLM`` 输出符合给定 ``BaseModel`` 的实例
@@ -368,7 +356,6 @@ class StructuredLLM:
             f"{self.max_retries + 1} attempts: {last_err}",
             last_error=last_err,
         )
-
 
 __all__ = [
     "StructuredLLM",

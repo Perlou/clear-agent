@@ -3,8 +3,8 @@
 Ported from AntonAgents (CC-BY-NC-SA-4.0)
 Original: anton_agents/memory/types/semantic.py
 
-**改造决策**（详见 project_docs/07-anton-agents-port.md §2.3）：
-ClearAgent 2.0-β **不引入 Neo4jStore**（Qdrant 已覆盖 90% 检索场景），
+**改造决策**：
+ClearAgent **不引入 Neo4jStore**（Qdrant 已覆盖 90% 检索场景），
 故本移植版把原始的 Neo4j 图数据库集成**全部替换为内存中的 entities/relations 缓存**：
 - ``self.entities: Dict[entity_id, Entity]``
 - ``self.relations: List[Relation]``
@@ -38,12 +38,9 @@ if TYPE_CHECKING:
     from ..retrieval.embeddings import EmbeddingModel
     from ..retrieval.storage.qdrant_store import QdrantVectorStore
 
-
 logger = logging.getLogger(__name__)
 
-
 # ==================== Entity / Relation ====================
-
 
 class Entity:
     """语义实体节点（内存中的图节点）"""
@@ -74,7 +71,6 @@ class Entity:
             "properties": dict(self.properties),
             "frequency": self.frequency,
         }
-
 
 class Relation:
     """语义关系边（内存中的图边）"""
@@ -108,9 +104,7 @@ class Relation:
             "frequency": self.frequency,
         }
 
-
 # ==================== SemanticMemory ====================
-
 
 class SemanticMemory(BaseMemory):
     """长期语义记忆（向量 + 内存知识图谱）
@@ -794,6 +788,5 @@ class SemanticMemory(BaseMemory):
                 "cached_relations": len(self.relations),
             },
         }
-
 
 __all__ = ["Entity", "Relation", "SemanticMemory"]

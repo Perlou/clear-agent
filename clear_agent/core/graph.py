@@ -1,6 +1,6 @@
 """StateGraph - 声明式状态图
 
-ClearAgent 2.0 的核心执行抽象，把 1.x 的硬编码 while 循环替换为可组合、
+ClearAgent 的核心执行抽象，把 1.x 的硬编码 while 循环替换为可组合、
 可恢复、可中断的图执行模型。
 
 核心概念：
@@ -10,7 +10,7 @@ ClearAgent 2.0 的核心执行抽象，把 1.x 的硬编码 while 循环替换�
 - START / END：内置常量节点
 - Reducer：字段合并策略（replace/add_messages/merge_dict/自定义）
 
-详见：project_docs/01-graph-architecture.md
+
 """
 
 from __future__ import annotations
@@ -206,7 +206,7 @@ class RunConfig:
         max_steps: 单次执行最多经过多少节点（防死循环）
         recursion_limit: 同一节点最多重入次数
         on_error: "raise" | "record_and_continue"
-        callbacks: 节点级钩子（暂未启用，2.0-β 接 Callbacks 协议）
+        callbacks: 节点级钩子（暂未启用，按需接 Callbacks 协议）
     """
 
     thread_id: Optional[str] = None
@@ -224,7 +224,7 @@ class RunConfig:
 
 @dataclass
 class StreamEvent:
-    """图执行流式事件（2.0 graph 内部专用，与 streaming.StreamEvent 兼容）
+    """图执行流式事件（graph 内部专用，与 streaming.StreamEvent 兼容）
 
     type: "node_start" | "node_finish" | "edge" | "checkpoint" | "error" | "end"
     """
@@ -639,7 +639,7 @@ class CompiledGraph(Generic[S]):
         """根据 router 决策与 mapping 解析为目标节点"""
         if isinstance(decision, list):
             # 并行多分支：本期选第一个，告警 todo
-            # （2.0-β 实现真正的并行执行；本期先支持单分支返回）
+            # （实现真正的并行执行；本期先支持单分支返回）
             decision = decision[0] if decision else END
         if mapping:
             target = mapping.get(decision)
