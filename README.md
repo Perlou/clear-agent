@@ -220,13 +220,177 @@ tests/                # 740+ pytest 测试
 - **评估与可观测性**：[`docs/eval-harness.md`](docs/eval-harness.md) · [`docs/observability.md`](docs/observability.md)
 - **进阶**：[`docs/context-engineering.md`](docs/context-engineering.md) · [`docs/skills.md`](docs/skills.md) · [`docs/async-streaming.md`](docs/async-streaming.md)
 
-## 🛠️ 开发
+## 🛠️ 本地开发与调试
+
+### 1. 克隆与环境
 
 ```bash
-pytest                                              # 全量测试
-black clear_agent tests && isort clear_agent tests  # 格式化
-mypy clear_agent                                    # 类型检查
+git clone https://github.com/Perlou/clear-agent.git
+cd clear-agent
+
+python3.10 -m venv .venv && source .venv/bin/activate     # 推荐 3.10/3.11/3.12
+pip install --upgrade pip
+
+# editable 安装 + 全套可选依赖（开发态推荐）
+pip install -e ".[mcp,retrieval-qdrant,rag,memory,anthropic,gemini]"
+
+# 仅装最小核心也行
+pip install -e .
+
+# 配置 .env
+cp .env.example .env  # 填 LLM_MODEL_ID / LLM_API_KEY / LLM_BASE_URL
 ```
+
+> 📌 装好后任何位置都能 `from clear_agent import ...`，且改 `clear_agent/` 源码即时生效，无需重装。
+
+### 2. 在 `examples/` 里调试新 demo
+
+`examples/` 下的脚本（如 `examples/trip-planner/`）默认就用本仓库的源码：
+
+```bash
+# 单文件 demo
+python examples/async_agent_demo.py
+
+# 子项目 demo（trip-planner 等需要后端 / 前端）
+cd examples/trip-planner/backend
+pip install fastapi 'uvicorn[standard]' pydantic-settings python-dotenv uv
+python run.py
+```
+
+如果想验证「外部用户 pip install clear-agent 后是否能跑」，把整个子目录复制出去用 `requirements.txt` 重装即可（trip-planner 已带）。
+
+### 3. 测试
+
+```bash
+pytest                                # 全量
+pytest tests/test_graph_basics.py -v  # 单文件
+pytest -k structured -v               # 关键字过滤
+pytest -m "not integration" -q        # 跳过需真 API 的集成测试
+```
+
+**首次跑测试常见坑：**
+
+| 现象 | 原因 | 解决 |
+|---|---|---|
+| `Using SOCKS proxy, but socksio not installed` | 系统设了 `all_proxy=socks5://...` | `pip install 'httpx[socks]'` 或 `unset all_proxy http_proxy https_proxy` |
+| `async def functions are not natively supported` | 缺 pytest-asyncio | `pip install pytest-asyncio` |
+| 真实 LLM 测试 401 / 超时 | `.env` 没配 / endpoint 不通 | 先 `pytest -m "not integration"` 跑单测，再单独修 |
+
+### 4. 代码风格 / 类型检查
+
+```bash
+black clear_agent tests && isort clear_agent tests   # 格式化
+mypy clear_agent                                      # 严格类型
+```
+
+提交前可选挂 pre-commit：`pip install pre-commit && pre-commit install`。
+
+### 5. 调试技巧
+
+**最小复现环境变量：**
+
+```bash
+export PYTHONBREAKPOINT=ipdb.set_trace      # 让 breakpoint() 进 ipdb
+export CLEAR_AGENT_LOG_LEVEL=DEBUG          # 打开 framework 内部日志
+pytest tests/test_xxx.py::test_yyy -v -s    # -s 不吞 print/输入
+```
+
+**只跑挂掉的那一个：**
+
+```bash
+pytest --lf -x                              # last-failed + 第一个失败就停
+pytest tests/test_xxx.py -k "name and not slow" --pdb   # 失败处自动进 pdb
+```
+
+**调试 LLM 真实调用 + 工具循环：**
+
+```python
+import logging; logging.basicConfig(level=logging.DEBUG)
+from clear_agent.observability.trace_logger import TraceLogger
+TraceLogger().enable()                      # 每一步落 JSONL + HTML 时间线
+```
+
+**追踪 MCP 子进程：** 给 `MCPClient.connect_stdio(...)` 传 `env={"DEBUG": "1", ...}`，子进程的 stderr 会原样透出到父进程。
+
+## 📦 发布到 PyPI
+
+`scripts/release.sh` 是一键发布脚本，按 **11 个 Phase** 顺序执行；任何一个 Phase 失败都会停下并给出可恢复的提示。
+
+### 脚本流程
+
+| Phase | 做什么 | 失败后怎么办 |
+|---|---|---|
+| 0  工具与环境检查 | 校验 `python` / `build` / `twine` / `git` | 装缺失工具 |
+| 1  Git 工作区检查 | 确认 working tree 干净 | `git stash` 或 `git commit` |
+| 2  版本号 | 校验 `pyproject.toml` 版号未在 PyPI 占用 | `--bump patch` 或 `--version X.Y.Z` |
+| 3  必备文件 | 检查 README / LICENSE / MANIFEST / py.typed | 补齐对应文件 |
+| 4  全量 pytest | 跑所有测试（可 `--skip-tests`） | 修代码或确认是环境问题再 `--skip-tests` |
+| 5  清理 + 构建 | `rm -rf dist build` + `python -m build` | 看 build 日志 |
+| 6  twine check | `twine check dist/*` 检查长描述/元数据 | 修 `pyproject.toml` |
+| 7  包内容审查 | 列 wheel/sdist 内容确认没漏 / 没多 | 调 `MANIFEST.in` 或 `[tool.setuptools]` |
+| 8  干净环境装机验证 | 临时 venv 装 wheel + 冒烟 import | `--skip-clean-install` 跳过 |
+| 9  上传 | `twine upload`（pypi / testpypi） | 看凭证 / 网络 |
+| 10 Git tag | `git tag vX.Y.Z` + 可选 `git push --tags` | `--skip-tag` 跳过 |
+
+### 常用姿势
+
+```bash
+# 1) 干跑：只构建 + 校验，不上传（强烈建议每次发版前先跑一遍）
+bash scripts/release.sh --dry-run
+
+# 2) 先发 TestPyPI 验证（推荐流程）
+bash scripts/release.sh --test
+
+# 3) 正式发到 PyPI
+bash scripts/release.sh                # 交互式
+bash scripts/release.sh --yes          # CI 用，全部自动 yes
+
+# 4) 自动 bump 版本号
+bash scripts/release.sh --bump patch          # 2.0.0 → 2.0.1
+bash scripts/release.sh --bump minor          # 2.0.0 → 2.1.0
+bash scripts/release.sh --version 2.0.0rc1    # 显式指定
+
+# 5) 紧急发版组合（不推荐）
+bash scripts/release.sh --skip-tests          # 跳测试（环境问题暂时绕过）
+bash scripts/release.sh --skip-clean-install  # 跳干净环境验证（提速）
+bash scripts/release.sh --skip-tag            # 不打 git tag
+```
+
+完整参数详见 `scripts/release.sh` 头部注释；端到端 SOP 与版本策略见 [`docs/pypi-release.md`](docs/pypi-release.md)。
+
+### 退出码
+
+`0` 成功 ｜ `1` 通用失败 ｜ `2` 参数错误 ｜ `3` 环境/工具缺失 ｜ `4` 版本检查失败 ｜ `5` 测试失败 ｜ `6` 构建失败 ｜ `7` 上传失败
+
+### 凭证配置（任选其一）
+
+```bash
+# 方式 A：环境变量（CI 推荐）
+export TWINE_USERNAME=__token__
+export TWINE_PASSWORD=pypi-AgEIcHlwaS5vcmc...
+
+# 方式 B：~/.pypirc（本地推荐）
+cat > ~/.pypirc <<EOF
+[pypi]
+username = __token__
+password = pypi-AgEIcHlwaS5vcmc...
+
+[testpypi]
+repository = https://test.pypi.org/legacy/
+username = __token__
+password = pypi-...
+EOF
+chmod 600 ~/.pypirc
+```
+
+### 发版前自查清单
+
+- [ ] `pyproject.toml` 与 `clear_agent/version.py` 版本号一致
+- [ ] `CHANGELOG` / commit history 已整理
+- [ ] `pytest` 全绿（环境问题除外，见上文表格）
+- [ ] PyPI 上目标版本号未被占用（脚本会自动检查）
+- [ ] 本地 `--dry-run` 通过
+- [ ] 先打 TestPyPI 验证 `pip install -i https://test.pypi.org/simple/ clear-agent==X.Y.Z`
 
 ## 📄 License
 

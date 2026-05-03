@@ -539,7 +539,7 @@ class EditTool(Tool):
                 return ToolResponse.error(
                     code=ToolErrorCode.INVALID_PARAM,
                     message=f"old_string 必须唯一匹配文件内容。找到 {matches} 处匹配。",
-                    data={"matches": matches},
+                    context={"matches": matches},
                 )
 
             # 执行替换
@@ -710,7 +710,7 @@ class MultiEditTool(Tool):
                     return ToolResponse.error(
                         code=ToolErrorCode.INVALID_PARAM,
                         message=f"编辑项 {i}: old_string 必须唯一匹配。找到 {matches} 处匹配。",
-                        data={"edit_index": i, "matches": matches},
+                        context={"edit_index": i, "matches": matches},
                     )
 
             # 执行所有替换（原子性）
