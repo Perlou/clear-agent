@@ -212,6 +212,7 @@ tests/                # 740+ pytest 测试
 
 ## 📚 文档
 
+- **架构全景**：[`docs/architecture.md`](docs/architecture.md) ← **新人先读这一份**
 - **快速开始**：[`docs/quickstart.md`](docs/quickstart.md)
 - **核心架构**：[`docs/graph-architecture.md`](docs/graph-architecture.md) · [`docs/hitl.md`](docs/hitl.md)
 - **数据与记忆**：[`docs/rag-guide.md`](docs/rag-guide.md) · [`docs/memory-guide.md`](docs/memory-guide.md)
