@@ -139,16 +139,3 @@ plan: TripPlan = structured_llm.invoke([
 ])
 ```
 
-## 🆚 与 HelloAgents 参考实现的差异
-
-| 维度 | HelloAgents 版 | ClearAgent 版（本 demo） |
-|---|---|---|
-| Agent 数量 | 4 个 SimpleAgent 串联 | 1 个 ReActAgent + 1 次结构化抽取 |
-| 工具协议 | 自定义 `[TOOL_CALL:foo:k=v]` 字符串 | OpenAI Function Calling 原生 |
-| JSON 解析 | 手工抽 ```` ```json ```` 块 + `json.loads` | `with_structured_output` Pydantic 直出 |
-| 代码量 | ~430 行核心 agent | ~180 行核心 agent |
-| 可观测性 | 自己 print | clear-agent 内置 TraceLogger |
-
-## 📜 License
-
-CC BY-NC-SA 4.0（与 clear-agent 主仓库一致，非商业）
