@@ -1,6 +1,6 @@
-# RAG 指南（2.0-β 用户向 quickstart）
+# RAG 指南
 
-> 设计 spec 详见 [`project_docs/07-anton-agents-port.md`](../project_docs/07-anton-agents-port.md)。
+
 > 本文给最短上手路径。
 
 ## 1. 心智模型

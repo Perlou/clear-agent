@@ -1,6 +1,6 @@
-# StateGraph 架构（2.0 用户向 quickstart）
+# StateGraph 架构
 
-> 设计 spec 详见 [`project_docs/01-graph-architecture.md`](../project_docs/01-graph-architecture.md)。
+
 > 本文给最短上手路径。
 
 ## 1. 心智模型

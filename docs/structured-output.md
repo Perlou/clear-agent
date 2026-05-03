@@ -1,6 +1,6 @@
-# 结构化输出（2.0 用户向 quickstart）
+# 结构化输出
 
-> 设计 spec 详见 [`project_docs/04-structured-output.md`](../project_docs/04-structured-output.md)。
+
 
 让 LLM 严格输出符合 Pydantic schema 的对象，一行打通。
 
@@ -112,13 +112,12 @@ ev = LLMAsJudge(
 )
 ```
 
-## 8. 兼容范围（2.0-α）
+## 8. 兼容范围
 
 | Provider | function_calling | json_mode | json_schema |
 |---|---|---|---|
 | OpenAI gpt-4o-2024-08-06+ | ✅ | ✅ | ✅ |
 | OpenAI gpt-4 / 3.5 | ✅ | ✅ | ❌ |
 | DeepSeek / Qwen / Kimi / 智谱 | ✅ | ⚠️ 部分 | ❌ |
-| Anthropic / Gemini | ⚠️ adapter 仓库内未实现，2.0-β 补 | | |
+| Anthropic / Gemini | ✅ 通过 function_calling 路径覆盖 | | |
 
-> 2.0-β 计划补 Anthropic / Gemini 的完整结构化输出。

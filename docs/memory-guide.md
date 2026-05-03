@@ -1,8 +1,8 @@
-# Memory 指南（2.0-β 用户向 quickstart）
+# Memory 指南
 
-> 设计 spec 详见 [`project_docs/07-anton-agents-port.md`](../project_docs/07-anton-agents-port.md)。
 
-ClearAgent 2.0-β 提供两层记忆 + 一层管理器：
+
+ClearAgent 提供两层记忆 + 一层管理器：
 
 | 层 | 类 | 用途 |
 |---|---|---|

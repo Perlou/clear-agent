@@ -1,6 +1,6 @@
-# Eval-harness（2.0 用户向 quickstart）
+# Eval-harness 评估框架
 
-> 设计 spec 详见 [`project_docs/05-eval-harness.md`](../project_docs/05-eval-harness.md)。
+
 
 跑「100 个用例 → 对比 graph / prompt / 模型 → 输出 markdown 报告」的最小工具集。
 
