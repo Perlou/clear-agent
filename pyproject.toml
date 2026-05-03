@@ -5,15 +5,38 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "clear-agent"
 version = "2.0.0"
-description = "多智能体框架 2.0 GA - StateGraph + RAG + Memory + Multi-agent + MCP + LCEL + Resilience（Retry/Fallback）+ Pydantic Tool 自动推导 + Multimodal + Prompt caching + Eval-harness + 结构化输出"
+description = "Lightweight composable multi-agent framework with StateGraph, RAG, Memory, MCP, and structured output"
 readme = "README.md"
 license = {text = "CC-BY-NC-SA-4.0"}
 authors = [
     {name = "Perlou", email = "perloukevin@gmail.com"}
 ]
+maintainers = [
+    {name = "Perlou", email = "perloukevin@gmail.com"}
+]
 requires-python = ">=3.10"
+keywords = [
+    "agent", "multi-agent", "llm", "ai", "openai", "anthropic", "gemini",
+    "rag", "memory", "mcp", "stategraph", "checkpoint", "hitl",
+    "structured-output", "function-calling", "lcel", "eval",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
-    # 核心依赖
     "openai>=1.0.0,<2.0.0",
     "requests>=2.25.0,<3.0.0",
     "python-dotenv>=0.19.0,<2.0.0",
@@ -25,43 +48,66 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gemini = ["google-genai>=1.0.0"]
+# 多 provider 适配
 anthropic = ["anthropic>=0.20.0"]
-# 2.0 新增：检索 / RAG / Memory（按需安装）
-retrieval = [
-    "scikit-learn>=1.0.0",  # TFIDFEmbedding 兜底 + WorkingMemory.retrieve TF-IDF
-]
-retrieval-qdrant = [
-    "qdrant-client>=1.6.0",  # QdrantVectorStore
-]
+gemini = ["google-genai>=1.0.0"]
+dashscope = ["dashscope>=1.10.0"]
+
+# 检索 / RAG / Memory
+retrieval = ["scikit-learn>=1.0.0"]
+retrieval-qdrant = ["qdrant-client>=1.6.0"]
 rag = [
-    "sentence-transformers>=2.2.0",   # local embedding + cross-encoder rerank
+    "sentence-transformers>=2.2.0",
     "transformers>=4.20.0",
     "torch>=1.12.0",
-    "markitdown>=0.0.1",              # 通用文档加载（PDF/DOCX/XLSX/...）
-    "langdetect>=1.0.9",              # 语言检测
+    "markitdown>=0.0.1",
+    "langdetect>=1.0.9",
 ]
 memory = [
-    "scikit-learn>=1.0.0",   # WorkingMemory TF-IDF 检索
-    "spacy>=3.4.0",          # SemanticMemory NER（中英文）
+    "scikit-learn>=1.0.0",
+    "spacy>=3.4.0",
 ]
-mcp = [
-    "mcp>=1.0.0",            # 官方 MCP SDK（Python）
-]
-dashscope = [
+
+# 协议集成
+mcp = ["mcp>=1.0.0"]
+
+# 一键全套（用于完整能力体验）
+all = [
+    "anthropic>=0.20.0",
+    "google-genai>=1.0.0",
     "dashscope>=1.10.0",
+    "scikit-learn>=1.0.0",
+    "qdrant-client>=1.6.0",
+    "sentence-transformers>=2.2.0",
+    "transformers>=4.20.0",
+    "torch>=1.12.0",
+    "markitdown>=0.0.1",
+    "langdetect>=1.0.9",
+    "spacy>=3.4.0",
+    "mcp>=1.0.0",
+]
+
+# 开发依赖
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+    "build>=1.0.0",
+    "twine>=4.0.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/Perlou/clear-agent"
-Documentation = "https://github.com/Perlou/clear-agent/blob/main/README.md"
+Documentation = "https://github.com/Perlou/clear-agent/tree/main/docs"
 Repository = "https://github.com/Perlou/clear-agent"
 "Bug Tracker" = "https://github.com/Perlou/clear-agent/issues"
+Changelog = "https://github.com/Perlou/clear-agent/releases"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["clear_agent*"]
-exclude = ["tests*", "examples*", "docs*"]
+exclude = ["tests*", "examples*", "docs*", "skills*"]
 
 [tool.setuptools.package-data]
 clear_agent = ["py.typed"]
@@ -72,7 +118,6 @@ target-version = ['py310']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
-  # directories
   \.eggs
   | \.git
   | \.hg
