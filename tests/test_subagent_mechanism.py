@@ -143,8 +143,13 @@ class TestAgentRunAsSubagent:
     def test_tool_filter_readonly(self):
         """测试只读工具过滤"""
         llm = ClearAgentLLM(provider="openai", model="gpt-3.5-turbo")
-        # 禁用 skills 和 subagent 自动注册
-        config = Config(subagent_enabled=False, skills_enabled=False)
+        # 禁用所有自动注册的内建工具，避免污染 expected count
+        config = Config(
+            subagent_enabled=False,
+            skills_enabled=False,
+            todowrite_enabled=False,
+            devlog_enabled=False,
+        )
 
         # 创建工具注册表
         registry = ToolRegistry()
@@ -172,8 +177,13 @@ class TestAgentRunAsSubagent:
     def test_tool_filter_full_access(self):
         """测试完全访问过滤器"""
         llm = ClearAgentLLM(provider="openai", model="gpt-3.5-turbo")
-        # 禁用 skills 和 subagent 自动注册
-        config = Config(subagent_enabled=False, skills_enabled=False)
+        # 禁用所有自动注册的内建工具，避免污染 expected count
+        config = Config(
+            subagent_enabled=False,
+            skills_enabled=False,
+            todowrite_enabled=False,
+            devlog_enabled=False,
+        )
 
         registry = ToolRegistry()
         registry.register_tool(MockReadTool())

@@ -230,18 +230,32 @@ cd clear-agent
 
 python3.10 -m venv .venv && source .venv/bin/activate     # 推荐 3.10/3.11/3.12
 pip install --upgrade pip
+```
 
-# editable 安装 + 全套可选依赖（开发态推荐）
-pip install -e ".[mcp,retrieval-qdrant,rag,memory,anthropic,gemini]"
+**装依赖三选一：**
 
-# 仅装最小核心也行
+```bash
+# A. 一键装齐（runtime + 轻量 extras + 全 dev/test 工具）—— 贡献者推荐
+pip install -r requirements.txt
+pip install -e .                       # editable 安装本包
+
+# B. editable + 自选 extras（更精细）
+pip install -e ".[mcp,retrieval-qdrant,memory,anthropic,gemini,dev]"
+
+# C. 仅装最小核心（不跑测试 / 不写 RAG）
 pip install -e .
+```
+
+```bash
+# RAG（拉 sentence-transformers + torch ~2GB，按需）
+pip install "clear-agent[rag]"
 
 # 配置 .env
 cp .env.example .env  # 填 LLM_MODEL_ID / LLM_API_KEY / LLM_BASE_URL
 ```
 
-> 📌 装好后任何位置都能 `from clear_agent import ...`，且改 `clear_agent/` 源码即时生效，无需重装。
+> 📌 `pip install -e .` 后任何位置都能 `from clear_agent import ...`，且改 `clear_agent/` 源码即时生效，无需重装。
+> 📌 `requirements.txt` 是给贡献者一键装齐的；终端用户 `pip install clear-agent` 走 PyPI 不需要它。
 
 ### 2. 在 `examples/` 里调试新 demo
 
@@ -272,9 +286,10 @@ pytest -m "not integration" -q        # 跳过需真 API 的集成测试
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| `Using SOCKS proxy, but socksio not installed` | 系统设了 `all_proxy=socks5://...` | `pip install 'httpx[socks]'` 或 `unset all_proxy http_proxy https_proxy` |
-| `async def functions are not natively supported` | 缺 pytest-asyncio | `pip install pytest-asyncio` |
+| `Using SOCKS proxy, but socksio not installed` | 系统设了 `all_proxy=socks5://...` | 已包含在 `requirements.txt` 的 `httpx[socks]`；或 `unset all_proxy http_proxy https_proxy` |
+| `async def functions are not natively supported` | 缺 pytest-asyncio | 已包含在 `requirements.txt` |
 | 真实 LLM 测试 401 / 超时 | `.env` 没配 / endpoint 不通 | 先 `pytest -m "not integration"` 跑单测，再单独修 |
+| `*_when_*_missing` 这类反向测试失败 | 装了对应可选依赖 | 这是测试桩问题，不影响实际功能 |
 
 ### 4. 代码风格 / 类型检查
 

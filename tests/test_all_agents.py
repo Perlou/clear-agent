@@ -1,4 +1,12 @@
-"""ClearAgent 全面测试套件 - 确保所有Agent可正常使用"""
+"""ClearAgent 全面测试套件 - 确保所有Agent可正常使用
+
+⚠️ 这是 **真实 LLM API 集成测试**，需要：
+- 配好 ``.env``（``LLM_MODEL_ID`` / ``LLM_API_KEY`` / ``LLM_BASE_URL``）
+- 网络可访问 endpoint
+
+默认 ``pytest -q`` 会**跳过**这个文件（``-m 'not integration'``）。
+跑这些测试：``pytest -m integration``
+"""
 
 import pytest
 import os
@@ -16,6 +24,9 @@ from clear_agent.tools.builtin.calculator import CalculatorTool
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# 整文件标记为 integration —— 默认 pytest 跳过
+pytestmark = pytest.mark.integration
 
 
 class TestEnvironment:

@@ -13,7 +13,12 @@ class TestReadOnlyFilter:
     """测试只读工具过滤器"""
 
     def test_filter_readonly_tools(self):
-        """测试只保留只读工具"""
+        """测试只保留只读工具
+
+        ``ReadOnlyFilter.READONLY_TOOLS`` 当前白名单：
+        Read/ReadTool/LS/LSTool/Glob/GlobTool/Grep/GrepTool/Skill/SkillTool。
+        测试以这个真实集合为准。
+        """
         filter_obj = ReadOnlyFilter()
 
         all_tools = [
@@ -21,25 +26,27 @@ class TestReadOnlyFilter:
             "Write",
             "Edit",
             "LS",
+            "Glob",
             "Grep",
             "Bash",
-            "MemoryTool",
-            "SearchTool",
+            "Skill",
+            "SearchTool",  # 非白名单，应被过滤
         ]
 
         filtered = filter_obj.filter(all_tools)
 
-        # 应该只保留只读工具
+        # 只读工具保留
         assert "Read" in filtered
         assert "LS" in filtered
+        assert "Glob" in filtered
         assert "Grep" in filtered
-        assert "MemoryTool" in filtered
-        assert "SearchTool" in filtered
+        assert "Skill" in filtered
 
-        # 不应该包含写入工具
+        # 写入 / 自定义工具被过滤
         assert "Write" not in filtered
         assert "Edit" not in filtered
         assert "Bash" not in filtered
+        assert "SearchTool" not in filtered
 
     def test_is_allowed(self):
         """测试单个工具检查"""

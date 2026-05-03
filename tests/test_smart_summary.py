@@ -69,6 +69,7 @@ def test_simple_summary_generation(agent_with_simple_summary):
     print("✅ 简单摘要生成测试通过")
 
 
+@pytest.mark.integration
 def test_smart_summary_generation(agent_with_smart_summary):
     """测试智能摘要生成（真实 LLM 调用）"""
     # 创建历史消息（需要超过 min_retain_rounds 才会触发智能摘要）

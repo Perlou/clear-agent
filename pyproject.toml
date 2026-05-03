@@ -87,14 +87,24 @@ all = [
     "mcp>=1.0.0",
 ]
 
-# 开发依赖
+# 开发依赖（pip install -e ".[dev]"）
 dev = [
+    # 测试
     "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",  # @pytest.mark.asyncio 支持
+    "pytest-cov>=4.0.0",        # 覆盖率
+    "pytest-mock>=3.10.0",      # mocker fixture
+    # 代码风格 / 静态分析
     "black>=23.0.0",
     "isort>=5.12.0",
+    "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+    # 构建 / 发布
     "build>=1.0.0",
     "twine>=4.0.0",
+    # 网络（系统启用 SOCKS 代理时 httpx 需要）
+    "httpx[socks]>=0.27.0",
 ]
 
 [project.urls]
@@ -139,7 +149,13 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+# 默认跳过需要真实 LLM API key + 网络的集成测试
+# 跑集成测试：``pytest -m integration``
+# 跑全部：``pytest -m "integration or not integration"``
+addopts = "-v --tb=short -m 'not integration'"
+markers = [
+    "integration: 真实 LLM API 集成测试（需要 .env 凭证 + 网络，CI 才跑）",
+]
 
 [tool.mypy]
 python_version = "3.10"

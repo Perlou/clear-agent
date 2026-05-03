@@ -441,6 +441,14 @@ class TestOptimisticLocking:
         )
         assert edit_b.status == ToolStatus.SUCCESS
 
+        # 让 mtime 跨毫秒 —— 文件系统精度有限，纯内存测试里 B 写入和 A 读取
+        # 缓存可能在同一毫秒内，导致乐观锁 mtime 检查失效。强制把文件 mtime
+        # 拨到未来 1 秒，模拟"B 修改后已过了一段时间"。
+        import time
+
+        future = time.time() + 1
+        os.utime(temp_workspace / "shared.txt", (future, future))
+
         # Agent A 尝试修改（应该失败）
         edit_tool_a = EditTool(project_root=str(temp_workspace), registry=registry_a)
         cached_a = registry_a.get_read_metadata("shared.txt")

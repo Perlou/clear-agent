@@ -94,14 +94,23 @@ def fake_qdrant(monkeypatch):
 # ==================== Section A: 包未装时的行为 ====================
 
 
-def test_qdrant_unavailable_when_package_missing():
-    """venv 中实际没装 qdrant-client → QDRANT_AVAILABLE=False"""
-    assert QDRANT_AVAILABLE is False
+def test_qdrant_unavailable_when_package_missing(monkeypatch):
+    """模拟 qdrant-client 未装 → ``QDRANT_AVAILABLE = False``
+
+    用 monkeypatch 临时改模块级常量，而非依赖真实卸载。
+    """
+    from clear_agent.retrieval.storage import qdrant_store as qs
+
+    monkeypatch.setattr(qs, "QDRANT_AVAILABLE", False)
+    assert qs.QDRANT_AVAILABLE is False
 
 
-def test_construct_without_package_raises_import_error():
+def test_construct_without_package_raises_import_error(monkeypatch):
+    from clear_agent.retrieval.storage import qdrant_store as qs
+
+    monkeypatch.setattr(qs, "QDRANT_AVAILABLE", False)
     with pytest.raises(ImportError) as exc_info:
-        QdrantVectorStore()
+        qs.QdrantVectorStore()
     assert "qdrant-client" in str(exc_info.value)
     assert "retrieval-qdrant" in str(exc_info.value)
 

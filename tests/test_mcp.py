@@ -246,15 +246,24 @@ def test_mcp_client_factory_sse():
     assert c.transport_params["headers"] == {"X": "1"}
 
 
-def test_mcp_client_list_tools_raises_when_mcp_missing():
-    """venv 里没装 mcp → list_tools 抛 ImportError 友好提示"""
+def test_mcp_client_list_tools_raises_when_mcp_missing(monkeypatch):
+    """mcp 包不可用时 → list_tools 抛 ImportError 友好提示
+
+    用 monkeypatch 隔离，不依赖真实卸载（venv 装了 mcp 也能跑）。
+    """
+    import sys
+
+    monkeypatch.setitem(sys.modules, "mcp", None)
     c = MCPClient.connect_stdio(command="x")
     with pytest.raises(ImportError) as exc_info:
         c.list_tools()
     assert "mcp SDK" in str(exc_info.value) or "clear-agent[mcp]" in str(exc_info.value)
 
 
-def test_mcp_client_call_tool_raises_when_mcp_missing():
+def test_mcp_client_call_tool_raises_when_mcp_missing(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "mcp", None)
     c = MCPClient.connect_stdio(command="x")
     with pytest.raises(ImportError):
         c.call_tool("name", {})
@@ -415,7 +424,10 @@ def test_mcp_server_list_tools_empty_registry():
     assert server.list_tools() == []
 
 
-def test_mcp_server_run_stdio_raises_when_mcp_missing():
+def test_mcp_server_run_stdio_raises_when_mcp_missing(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "mcp", None)
     reg = ToolRegistry()
     reg.register_tool(CalculatorTool())
     server = MCPServer(reg)

@@ -35,9 +35,14 @@ def test_anthropic_has_async_methods():
     assert hasattr(a, "create_async_client")
 
 
-def test_anthropic_create_async_client_without_sdk_raises():
+def test_anthropic_create_async_client_without_sdk_raises(monkeypatch):
+    """anthropic 包不可用时应抛友好错误（用 monkeypatch 隔离，不依赖真实卸载）"""
+    import sys
+
+    # 让任何 ``from anthropic import ...`` / ``import anthropic`` 重新触发 ImportError
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+
     a = _make_anthropic_adapter()
-    # venv 里没装 anthropic
     with pytest.raises(ClearAgentException) as exc_info:
         a.create_async_client()
     assert "anthropic" in str(exc_info.value).lower()

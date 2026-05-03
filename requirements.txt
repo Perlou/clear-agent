@@ -1,5 +1,20 @@
-# ClearAgent v1.0.0 核心依赖
+# =====================================================================
+# clear-agent —— 贡献者 / 开发者一键装齐文件
+# =====================================================================
+#
+# 这是给本仓库 **贡献者** 用的：包含 runtime + 全部轻量可选依赖 + 全部
+# 测试/开发工具，目的是 ``pip install -r requirements.txt`` 之后能直接
+# 跑 ``pytest`` 全套测试。
+#
+# 终端用户安装请直接：
+#   pip install clear-agent
+#   pip install "clear-agent[mcp,rag,memory,...]"   # 按需挑选 extras
+#
+# 真实数据来源（PyPI 分发版本）：``pyproject.toml`` 的 ``[project]``
+# 与 ``[project.optional-dependencies]``。
+# =====================================================================
 
+# --------- Core runtime（与 pyproject.toml [project] dependencies 一致）---------
 openai>=1.0.0,<2.0.0
 requests>=2.25.0,<3.0.0
 python-dotenv>=0.19.0,<2.0.0
@@ -8,3 +23,51 @@ numpy>=2.0.0,<3.0.0
 networkx>=2.6.0,<4.0.0
 tiktoken>=0.5.0
 pyyaml>=6.0.0
+
+# --------- 可选 extras：多 provider 适配 ---------
+anthropic>=0.20.0
+google-genai>=1.0.0
+dashscope>=1.10.0
+
+# --------- 可选 extras：检索 / 向量库 / Memory ---------
+scikit-learn>=1.0.0
+qdrant-client>=1.6.0
+spacy>=3.4.0
+markitdown>=0.0.1
+langdetect>=1.0.9
+
+# --------- 可选 extras：MCP 协议 ---------
+mcp>=1.0.0
+
+# --------- 测试工具 ---------
+pytest>=7.0.0
+pytest-asyncio>=0.21.0   # @pytest.mark.asyncio 支持（test_async_lifecycle.py 等需要）
+pytest-cov>=4.0.0         # 覆盖率（pytest --cov）
+pytest-mock>=3.10.0       # mocker fixture
+
+# --------- 代码风格 / 静态分析 ---------
+black>=23.0.0
+isort>=5.12.0
+ruff>=0.1.0
+mypy>=1.0.0
+pre-commit>=3.0.0
+
+# --------- 构建 / 发布（scripts/release.sh 需要）---------
+build>=1.0.0
+twine>=4.0.0
+
+# --------- 网络（系统启用 SOCKS 代理时 httpx 需要）---------
+httpx[socks]>=0.27.0
+
+# =====================================================================
+# 默认不装的"重型"可选依赖（按需自行 pip install）
+# =====================================================================
+#
+# RAG 全套（拉模型权重 ~2GB，初次安装很慢）：
+#   pip install "clear-agent[rag]"
+#   等价于：
+#   sentence-transformers>=2.2.0
+#   transformers>=4.20.0
+#   torch>=1.12.0
+#
+# =====================================================================

@@ -84,8 +84,11 @@ def test_approx_token_len_mixed():
     assert _approx_token_len("hello 你好") == 4
 
 
-def test_detect_lang_returns_unknown_when_langdetect_missing():
-    """venv 里没装 langdetect → 返回 unknown"""
+def test_detect_lang_returns_unknown_when_langdetect_missing(monkeypatch):
+    """langdetect 不可用时 → 返回 unknown（用 monkeypatch 隔离）"""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "langdetect", None)
     assert _detect_lang("hello world") == "unknown"
 
 

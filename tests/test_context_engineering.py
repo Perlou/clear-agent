@@ -313,6 +313,7 @@ class TestAgentIntegration:
 
         print("✅ Agent HistoryManager 集成测试通过")
 
+    @pytest.mark.integration
     def test_agent_auto_compression(self):
         """测试 Agent 自动压缩"""
         from clear_agent import SimpleAgent, ClearAgentLLM
@@ -348,6 +349,7 @@ class TestAgentIntegration:
 
         print("✅ Agent ObservationTruncator 集成测试通过")
 
+    @pytest.mark.integration
     def test_agent_real_conversation_with_compression(self):
         """测试真实对话场景下的自动压缩（真实 API 调用）"""
         from clear_agent import SimpleAgent, ClearAgentLLM

@@ -103,9 +103,10 @@ class CalculatorTool(Tool):
 
     def _eval_node(self, node):
         """递归计算AST节点"""
-        if isinstance(node, ast.Constant):  # Python 3.8+
+        if isinstance(node, ast.Constant):  # Python 3.8+（涵盖数字 / 字符串 / None / 布尔）
             return node.value
-        elif isinstance(node, ast.Num):  # Python < 3.8
+        # 兼容旧 Python（< 3.8 用 ast.Num，3.14 已彻底移除）—— 仅在属性还存在时才检查
+        elif hasattr(ast, "Num") and isinstance(node, ast.Num):  # pragma: no cover
             return node.n
         elif isinstance(node, ast.BinOp):
             return self.OPERATORS[type(node.op)](
