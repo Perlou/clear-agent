@@ -22,6 +22,8 @@ class LLMToolResponse:
     model: str
     usage: Dict[str, int] = field(default_factory=dict)
     latency_ms: int = 0
+    reasoning_content: Optional[str] = None
+    """推理过程（thinking model 返回；多轮调用时由 adapter 决定是否回写到下一轮 assistant message）"""
 
 
 @dataclass

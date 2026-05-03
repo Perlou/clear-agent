@@ -46,29 +46,41 @@ class TraceLogger:
         self.sanitize = sanitize
         self.html_include_raw = html_include_raw_response
 
+        # 确保目录存在
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # finalize 状态标志（True 表示当前 session 已结束、文件已关闭）
+        self._finalized = False
+
+        # 打开第一个 session
+        self._open_session_files()
+
+    def _open_session_files(self) -> None:
+        """开启一个新 session：生成 session_id、打开 JSONL/HTML 文件、清空事件缓存
+
+        既用于 ``__init__`` 首次开 session，也用于 ``finalize()`` 后被复用时
+        滚动到下一个 session（解决"agent 单例多次 run 后 jsonl 被 close"的 bug）。
+        """
         # 生成会话 ID
         self.session_id = self._generate_session_id()
 
         # 事件缓存（用于生成统计和最终 HTML）
         self._events: List[Dict] = []
 
-        # 确保目录存在
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
         # JSONL 文件路径
         self.jsonl_path = self.output_dir / f"trace-{self.session_id}.jsonl"
-
         # 打开 JSONL 文件（流式写入）
         self.jsonl_file = open(self.jsonl_path, "w", encoding="utf-8")
 
         # HTML 文件路径
         self.html_path = self.output_dir / f"trace-{self.session_id}.html"
-
         # 打开 HTML 文件（增量写入）
         self.html_file = open(self.html_path, "w", encoding="utf-8")
 
         # 写入 HTML 头部
         self._write_html_header()
+
+        self._finalized = False
 
     def _generate_session_id(self) -> str:
         """生成会话 ID
@@ -90,6 +102,11 @@ class TraceLogger:
             payload: 事件数据
             step: ReAct 循环的步骤序号（可选）
         """
+        # 上一个 session 已 finalize（文件被关闭）—— 自动滚动到新 session，
+        # 解决 Agent 单例被复用、第二次 ``run()`` 写已关闭文件的崩溃问题。
+        if self._finalized:
+            self._open_session_files()
+
         # 构造事件对象
         event_obj = {
             "ts": datetime.now().isoformat(),
@@ -164,7 +181,12 @@ class TraceLogger:
         1. 计算统计数据
         2. 写入 HTML 尾部（包含统计面板）
         3. 关闭所有文件
+        4. 标记 ``_finalized``，下次 ``log_event`` 会自动滚动到新 session
         """
+        if self._finalized:
+            # 防止重复 finalize 报错
+            return
+
         # 计算统计数据
         stats = self._compute_stats()
 
@@ -174,6 +196,8 @@ class TraceLogger:
         # 关闭文件
         self.jsonl_file.close()
         self.html_file.close()
+
+        self._finalized = True
 
         print(f"✅ Trace 已保存:")
         print(f"   JSONL: {self.jsonl_path}")

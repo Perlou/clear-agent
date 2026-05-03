@@ -263,21 +263,8 @@ class ReActAgent(Agent):
 
                 return final_answer
 
-            # 将助手消息添加到历史
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": response.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.name, "arguments": tc.arguments},
-                        }
-                        for tc in tool_calls
-                    ],
-                }
-            )
+            # 将助手消息添加到历史（adapter 序列化，自动处理 reasoning_content）
+            messages.append(self.llm.serialize_assistant_message(response))
 
             # 执行所有工具调用
             for tool_call in tool_calls:
@@ -633,24 +620,8 @@ class ReActAgent(Agent):
 
                     return final_answer
 
-                # 将助手消息添加到历史
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": response.content,
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": tc.arguments,
-                                },
-                            }
-                            for tc in tool_calls
-                        ],
-                    }
-                )
+                # 将助手消息添加到历史（adapter 序列化，自动处理 reasoning_content）
+                messages.append(self.llm.serialize_assistant_message(response))
 
                 # 异步并行执行工具
                 tool_results = await self._execute_tools_async(
@@ -1042,24 +1013,8 @@ class ReActAgent(Agent):
 
                         return
 
-                    # 添加助手消息到历史
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": response.content,
-                            "tool_calls": [
-                                {
-                                    "id": tc.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.name,
-                                        "arguments": tc.arguments,
-                                    },
-                                }
-                                for tc in tool_calls
-                            ],
-                        }
-                    )
+                    # 添加助手消息到历史（adapter 序列化，自动处理 reasoning_content）
+                    messages.append(self.llm.serialize_assistant_message(response))
 
                     # 执行工具调用
                     tool_results = await self._execute_tools_async_stream(

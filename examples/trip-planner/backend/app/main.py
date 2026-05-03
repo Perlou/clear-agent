@@ -1,6 +1,7 @@
 """FastAPI 入口"""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import FastAPI, HTTPException
@@ -35,15 +36,40 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup() -> None:
-    logger.info("启动中：校验配置并预热 Agent ...")
+    """启动时只校验配置；Agent 在首请求时懒加载。
+
+    为什么不在 startup 里预热？
+    ------------------------------
+    ``MCPClient.register_to()`` 内部走 ``asyncio.run(...)``，
+    而 startup hook 已经在运行的 event loop 里，
+    在 running loop 里再 ``asyncio.run`` 会抛
+    ``RuntimeError: asyncio.run() cannot be called from a running event loop``。
+    sync 的 POST handler 跑在 FastAPI 的 threadpool 工作线程里，
+    那个线程没有 loop，``asyncio.run`` 可以正常工作。
+    """
+    logger.info("启动中：校验配置 ...")
     try:
         settings.assert_ready()
-        # 预热（首请求时间从 30s 降到秒级）
-        get_service()
-        logger.info("✅ Agent 已就绪，监听 %s:%d", settings.app_host, settings.app_port)
+        logger.info(
+            "✅ 配置 OK，监听 %s:%d。Agent 将在首次请求 /api/trip/plan 时懒加载（首次约 5~30s）。",
+            settings.app_host,
+            settings.app_port,
+        )
+        # 在后台线程预热，避免首请求等待，又不阻塞当前 startup loop
+        asyncio.get_event_loop().run_in_executor(None, _preload_agent)
     except Exception as exc:  # noqa: BLE001
-        # 不抛 —— 让 / health 仍可访问，便于排查
-        logger.error("❌ 启动初始化失败：%s", exc)
+        # 不抛 —— 让 / 与 /health 仍可访问，便于排查
+        logger.error("❌ 启动配置校验失败：%s", exc)
+
+
+def _preload_agent() -> None:
+    """后台线程里预热 Agent —— 此线程无 event loop，asyncio.run 可正常工作"""
+    try:
+        logger.info("🔥 后台线程预热 Agent（uvx amap-mcp-server + 注册工具）...")
+        get_service()
+        logger.info("✅ Agent 已预热完成，下一次请求将秒级响应")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("⚠️ Agent 预热失败（不影响后续按需懒加载）：%s", exc)
 
 
 @app.get("/")
@@ -62,7 +88,12 @@ def health() -> dict:
 
 @app.post("/api/trip/plan", response_model=TripPlanResponse)
 def plan(request: TripRequest) -> TripPlanResponse:
-    """生成旅行计划"""
+    """生成旅行计划
+
+    handler 必须用 ``def``（非 ``async def``）—— 否则会运行在主 loop 里，
+    内部 ``MCPClient`` 的 ``asyncio.run`` 会冲突。
+    sync handler 由 FastAPI 自动放进 threadpool，工作线程没有 loop，OK。
+    """
     if request.travel_days <= 0:
         raise HTTPException(status_code=400, detail="travel_days 必须为正整数")
     try:

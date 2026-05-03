@@ -315,6 +315,23 @@ class ClearAgentLLM:
             None, lambda: self.invoke_with_tools(messages, tools, tool_choice, **kwargs)
         )
 
+    # ==================== 多轮对话 helper ====================
+
+    def serialize_assistant_message(
+        self, response: LLMToolResponse
+    ) -> Dict[str, Any]:
+        """把上一轮的 ``LLMToolResponse`` 序列化为下一轮请求要回传的 assistant message。
+
+        统一所有 agent loop（ReAct / Simple / Reflection / Plan-Solve）拼装
+        assistant message 的方式，避免遗漏 ``reasoning_content`` 等 provider 特有字段。
+
+        各 provider 的回写策略由 adapter 自行决定（见 ``BaseLLMAdapter.serialize_assistant_message``）：
+        - DeepSeek V4 thinking：必须回写 ``reasoning_content``
+        - DeepSeek-R1（``deepseek-reasoner``）：禁止回写
+        - 其他模型：默认回写，不影响调用
+        """
+        return self._adapter.serialize_assistant_message(response)
+
     # ==================== 结构化输出 ====================
 
     def with_structured_output(

@@ -197,21 +197,8 @@ class SimpleAgent(Agent):
                 final_response = response.content or "抱歉，我无法回答这个问题。"
                 break
 
-            # 将助手消息添加到历史
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": response.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.name, "arguments": tc.arguments},
-                        }
-                        for tc in tool_calls
-                    ],
-                }
-            )
+            # 将助手消息添加到历史（统一通过 adapter 序列化，自动处理 reasoning_content 等字段）
+            messages.append(self.llm.serialize_assistant_message(response))
 
             # 执行所有工具调用
             for tool_call in tool_calls:

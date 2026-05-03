@@ -137,20 +137,24 @@ def _make_llm_node(llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]):
 
         tool_calls = response.tool_calls or []
 
-        # 助手 message（OpenAI 格式）
-        assistant_msg: Dict[str, Any] = {
-            "role": "assistant",
-            "content": response.content,
-        }
-        if tool_calls:
-            assistant_msg["tool_calls"] = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.name, "arguments": tc.arguments},
-                }
-                for tc in tool_calls
-            ]
+        # 优先用 adapter 序列化（自动处理 reasoning_content 回写策略）；
+        # 缺失该方法时退回 OpenAI 原生格式（向后兼容外部自定义 LLM / mock）
+        if hasattr(llm, "serialize_assistant_message"):
+            assistant_msg: Dict[str, Any] = llm.serialize_assistant_message(response)
+        else:
+            assistant_msg = {
+                "role": "assistant",
+                "content": response.content,
+            }
+            if tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": tc.arguments},
+                    }
+                    for tc in tool_calls
+                ]
 
         delta_tokens = 0
         if response.usage:

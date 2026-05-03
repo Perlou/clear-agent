@@ -79,10 +79,86 @@ class BaseLLMAdapter(ABC):
         pass
 
     def _is_thinking_model(self, model_name: str) -> bool:
-        """判断是否为thinking model"""
-        thinking_keywords = ["reasoner", "o1", "o3", "thinking"]
+        """判断是否为 thinking model（仅作启发式提示用，不再用于门控 reasoning_content 捕获）"""
+        thinking_keywords = [
+            "reasoner",
+            "o1",
+            "o3",
+            "thinking",
+            "v4-flash",
+            "v4-pro",
+            "qwq",
+        ]
         model_lower = model_name.lower()
         return any(keyword in model_lower for keyword in thinking_keywords)
+
+    # ==================== Reasoning artifact 策略 ====================
+    #
+    # 不同 provider 对 reasoning_content / thinking_blocks / thinking_signature
+    # 的多轮回传协议并不统一：
+    #   - DeepSeek V4 (thinking 模式)：必须把上一轮的 reasoning_content 回写到
+    #     assistant message，否则 400 'must be passed back'
+    #   - DeepSeek-R1 (deepseek-reasoner)：禁止回写，回写会 400
+    #     'not allowed in conversation history'
+    #   - OpenAI o1/o3：服务端自管 state，客户端无 reasoning_content
+    #   - Anthropic extended thinking、Gemini 2.5 thinking：另有协议
+    #
+    # 因此 capture 总是做（始终尝试取 reasoning_content）；echo 由策略钩子决定。
+
+    def _should_echo_reasoning(self) -> bool:
+        """是否在多轮对话中把 reasoning_content 回写给 API。
+
+        默认 ``True``（回写）。绝大多数 provider 要么要求回写、要么忽略它。
+        子类可覆盖此方法处理特殊情况。
+        """
+        return True
+
+    def serialize_assistant_message(
+        self, response: "LLMToolResponse"
+    ) -> Dict[str, Any]:
+        """把 ``LLMToolResponse`` 序列化成下一轮请求要回传的 assistant message。
+
+        默认实现按 OpenAI 协议生成 ``{role, content, tool_calls?, reasoning_content?}``；
+        是否携带 ``reasoning_content`` 取决于 ``_should_echo_reasoning()``。
+
+        Anthropic / Gemini 等使用不同协议的 adapter 可覆盖此方法。
+        """
+        msg: Dict[str, Any] = {
+            "role": "assistant",
+            "content": response.content,
+        }
+        if response.tool_calls:
+            msg["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.name, "arguments": tc.arguments},
+                }
+                for tc in response.tool_calls
+            ]
+        if response.reasoning_content and self._should_echo_reasoning():
+            msg["reasoning_content"] = response.reasoning_content
+        return msg
+
+    @staticmethod
+    def _capture_reasoning_content(choice_or_message: Any) -> Optional[str]:
+        """通用的 reasoning_content 捕获：不再依赖模型名单，只看字段是否存在且非空。
+
+        覆盖以下结构：
+        - OpenAI o1：``choice.message.reasoning_content``
+        - DeepSeek：``choice.message.reasoning_content`` 或 ``choice.reasoning_content``
+        - 部分 provider 把字段放在 message 上，部分放在 choice 上
+        """
+        if choice_or_message is None:
+            return None
+        message = getattr(choice_or_message, "message", choice_or_message)
+        # 优先从 message 取
+        rc = getattr(message, "reasoning_content", None)
+        if rc:
+            return rc
+        # 兜底从 choice 取
+        rc = getattr(choice_or_message, "reasoning_content", None)
+        return rc or None
 
 
 class OpenAIAdapter(BaseLLMAdapter):
@@ -91,8 +167,21 @@ class OpenAIAdapter(BaseLLMAdapter):
     支持：
     - OpenAI官方API
     - 所有OpenAI兼容接口（DeepSeek、Qwen、Kimi、智谱等）
-    - Thinking Models（o1、deepseek-reasoner等）
+    - Thinking Models（o1、deepseek-reasoner、deepseek-v4-{flash,pro}、Qwen QwQ 等）
     """
+
+    def _should_echo_reasoning(self) -> bool:
+        """OpenAI 兼容协议下是否在多轮中回写 reasoning_content。
+
+        - DeepSeek-R1 (``deepseek-reasoner``)：禁止回写，否则 400
+          'reasoning_content is not allowed in conversation history'
+        - 其余模型默认回写：DeepSeek-V4 thinking 必须回写；其余 provider
+          看到这个字段会忽略，不影响调用。
+        """
+        m = (self.model or "").lower()
+        if "reasoner" in m or "deepseek-r1" in m:
+            return False
+        return True
 
     def create_client(self) -> Any:
         """创建OpenAI客户端"""
@@ -126,16 +215,8 @@ class OpenAIAdapter(BaseLLMAdapter):
 
             choice = response.choices[0]
             content = choice.message.content or ""
-            reasoning_content = None
-
-            # Thinking model特殊处理
-            if self._is_thinking_model(self.model):
-                # OpenAI o1系列：reasoning_content在message中
-                if hasattr(choice.message, "reasoning_content"):
-                    reasoning_content = choice.message.reasoning_content
-                # DeepSeek reasoner：可能在其他字段
-                elif hasattr(choice, "reasoning_content"):
-                    reasoning_content = choice.reasoning_content
+            # 通用捕获：不限于 thinking model，字段存在即提取
+            reasoning_content = self._capture_reasoning_content(choice)
 
             usage = {}
             if hasattr(response, "usage") and response.usage:
@@ -180,15 +261,12 @@ class OpenAIAdapter(BaseLLMAdapter):
                         collected_content.append(delta.content)
                         yield delta.content
 
-                    # Thinking model的推理过程
-                    if self._is_thinking_model(self.model):
-                        if (
-                            hasattr(delta, "reasoning_content")
-                            and delta.reasoning_content
-                        ):
-                            if reasoning_content is None:
-                                reasoning_content = ""
-                            reasoning_content += delta.reasoning_content
+                    # 通用捕获 reasoning_content（流式增量）
+                    delta_rc = getattr(delta, "reasoning_content", None)
+                    if delta_rc:
+                        if reasoning_content is None:
+                            reasoning_content = ""
+                        reasoning_content += delta_rc
 
                 if hasattr(chunk, "usage") and chunk.usage:
                     usage = {
@@ -236,15 +314,12 @@ class OpenAIAdapter(BaseLLMAdapter):
                         collected_content.append(delta.content)
                         yield delta.content
 
-                    # Thinking model的推理过程
-                    if self._is_thinking_model(self.model):
-                        if (
-                            hasattr(delta, "reasoning_content")
-                            and delta.reasoning_content
-                        ):
-                            if reasoning_content is None:
-                                reasoning_content = ""
-                            reasoning_content += delta.reasoning_content
+                    # 通用捕获 reasoning_content（流式增量）
+                    delta_rc = getattr(delta, "reasoning_content", None)
+                    if delta_rc:
+                        if reasoning_content is None:
+                            reasoning_content = ""
+                        reasoning_content += delta_rc
 
                 if hasattr(chunk, "usage") and chunk.usage:
                     usage = {
@@ -288,7 +363,8 @@ class OpenAIAdapter(BaseLLMAdapter):
             )
 
             latency_ms = int((time.time() - start_time) * 1000)
-            message = response.choices[0].message
+            choice = response.choices[0]
+            message = choice.message
 
             tool_calls = []
             if message.tool_calls:
@@ -315,6 +391,7 @@ class OpenAIAdapter(BaseLLMAdapter):
                 model=response.model,
                 usage=usage,
                 latency_ms=latency_ms,
+                reasoning_content=self._capture_reasoning_content(choice),
             )
 
         except Exception as e:
@@ -334,12 +411,8 @@ class OpenAIAdapter(BaseLLMAdapter):
             latency_ms = int((time.time() - start_time) * 1000)
             choice = response.choices[0]
             content = choice.message.content or ""
-            reasoning_content = None
-            if self._is_thinking_model(self.model):
-                if hasattr(choice.message, "reasoning_content"):
-                    reasoning_content = choice.message.reasoning_content
-                elif hasattr(choice, "reasoning_content"):
-                    reasoning_content = choice.reasoning_content
+            # 通用捕获：不限于 thinking model，字段存在即提取
+            reasoning_content = self._capture_reasoning_content(choice)
             usage = {}
             if hasattr(response, "usage") and response.usage:
                 usage = {
@@ -377,7 +450,8 @@ class OpenAIAdapter(BaseLLMAdapter):
                 **kwargs,
             )
             latency_ms = int((time.time() - start_time) * 1000)
-            message = response.choices[0].message
+            choice = response.choices[0]
+            message = choice.message
             tool_calls = []
             if message.tool_calls:
                 for tc in message.tool_calls:
@@ -401,6 +475,7 @@ class OpenAIAdapter(BaseLLMAdapter):
                 model=response.model,
                 usage=usage,
                 latency_ms=latency_ms,
+                reasoning_content=self._capture_reasoning_content(choice),
             )
         except Exception as e:
             raise ClearAgentException(f"OpenAI 异步 Function Calling 调用失败: {str(e)}")
