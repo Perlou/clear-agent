@@ -27,7 +27,7 @@ AntonAgents 的 ``manager.py`` 源文件 0 字节但被 ``__init__.py`` import�
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .base import BaseMemory, MemoryItem
 
@@ -40,7 +40,7 @@ class MemoryManager:
         memories: ``memory_type -> BaseMemory`` 的注册表
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.memories: Dict[str, BaseMemory] = {}
 
     # ==================== 注册 / 路由 ====================
@@ -95,7 +95,7 @@ class MemoryManager:
                 f"未注册 memory_type='{memory_item.memory_type}'；"
                 f"已注册: {self.types()}"
             )
-        return target.add(memory_item)
+        return cast(str, target.add(memory_item))
 
     def retrieve(
         self,
@@ -160,11 +160,11 @@ class MemoryManager:
             mem = self.memories.get(memory_type)
             if mem is None:
                 return False
-            return mem.update(memory_id, content, importance, metadata)
+            return bool(mem.update(memory_id, content, importance, metadata))
 
         for mem in self.memories.values():
             if mem.has_memory(memory_id):
-                return mem.update(memory_id, content, importance, metadata)
+                return bool(mem.update(memory_id, content, importance, metadata))
         return False
 
     def remove(
@@ -175,11 +175,11 @@ class MemoryManager:
             mem = self.memories.get(memory_type)
             if mem is None:
                 return False
-            return mem.remove(memory_id)
+            return bool(mem.remove(memory_id))
 
         for mem in self.memories.values():
             if mem.has_memory(memory_id):
-                return mem.remove(memory_id)
+                return bool(mem.remove(memory_id))
         return False
 
     def has_memory(self, memory_id: str) -> bool:

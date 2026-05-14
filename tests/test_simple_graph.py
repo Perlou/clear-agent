@@ -60,6 +60,23 @@ class _MockLLM:
         return self._tools.pop(0)
 
 
+class _SerializingMockLLM(_MockLLM):
+    def serialize_assistant_message(self, response):
+        msg = {"role": "assistant", "content": response.content}
+        if response.tool_calls:
+            msg["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.name, "arguments": tc.arguments},
+                }
+                for tc in response.tool_calls
+            ]
+        if response.reasoning_content:
+            msg["reasoning_content"] = response.reasoning_content
+        return msg
+
+
 def _resp(content: str, total_tokens: int = 5) -> LLMResponse:
     return LLMResponse(
         content=content, model="mock-model", usage={"total_tokens": total_tokens}
@@ -156,6 +173,34 @@ def test_simple_graph_tool_call_then_final_answer():
     tool_msgs = [m for m in result["messages"] if m.get("role") == "tool"]
     assert any("5" in m["content"] for m in tool_msgs)
     assert result["iterations"] == 2
+
+
+def test_simple_graph_uses_llm_assistant_serializer_for_tool_loop():
+    """tool loop 中的 assistant message 应保留 provider 特定回写字段。"""
+    from clear_agent import CalculatorTool, ToolRegistry
+
+    registry = ToolRegistry()
+    registry.register_tool(CalculatorTool())
+    calc_name = "python_calculator"
+
+    first = LLMToolResponse(
+        content=None,
+        tool_calls=[_make_call(calc_name, {"expression": "2+3"})],
+        model="mock-model",
+        usage={"total_tokens": 7},
+        reasoning_content="reasoning trace",
+    )
+    llm = _SerializingMockLLM(
+        tool_responses=[first, _tool_resp(content="answer is 5")]
+    )
+    compiled = build_simple_graph(llm, tool_registry=registry)
+
+    compiled.invoke(
+        {"messages": [{"role": "user", "content": "calc"}], "max_iterations": 3}
+    )
+
+    second_messages = llm.tool_calls[1]["messages"]
+    assert any(m.get("reasoning_content") == "reasoning trace" for m in second_messages)
 
 
 # ==================== Test 4: max_iterations 终止 ====================

@@ -14,6 +14,8 @@ from ..tools.registry import ToolRegistry
 from ..tools.response import ToolStatus
 from ..tools.errors import ToolErrorCode
 
+ToolExecutionResult = tuple[str, str, Dict[str, Any]]
+
 # 新的系统提示词
 DEFAULT_REACT_SYSTEM_PROMPT = """你是一个具备推理和行动能力的 AI 助手。
 
@@ -58,7 +60,7 @@ class ReActAgent(Agent):
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
         max_steps: int = 5,
-    ):
+    ) -> None:
         """
         初始化 ReActAgent
 
@@ -82,11 +84,12 @@ class ReActAgent(Agent):
 
         self._builtin_tools = {"Thought", "Finish"}
 
-    def add_tool(self, tool):
+    def add_tool(self, tool: Any) -> None:
         """添加工具到工具注册表"""
+        assert self.tool_registry is not None
         self.tool_registry.register_tool(tool)
 
-    def as_graph(self, checkpointer=None):
+    def as_graph(self, checkpointer: Any = None) -> Any:
         """返回等价的 ReAct StateGraph
 
         新代码推荐使用此方法获取 graph 实例，可享受 checkpoint / resume / stream / HITL 能力。
@@ -114,7 +117,7 @@ class ReActAgent(Agent):
             checkpointer=checkpointer,
         )
 
-    def run(self, input_text: str, **kwargs) -> str:
+    def run(self, input_text: str, **kwargs: Any) -> str:
         """
         运行 ReAct Agent
 
@@ -159,7 +162,9 @@ class ReActAgent(Agent):
                     print(f"❌ 保存失败: {save_error}")
             raise
 
-    def _run_impl(self, input_text: str, session_start_time, **kwargs) -> str:
+    def _run_impl(
+        self, input_text: str, session_start_time: datetime, **kwargs: Any
+    ) -> str:
         """
         ReAct Agent 主逻辑实现
 
@@ -316,7 +321,7 @@ class ReActAgent(Agent):
 
                     # 检查是否是 Finish
                     if tool_name == "Finish" and result.get("finished"):
-                        final_answer = result["final_answer"]
+                        final_answer = str(result.get("final_answer", ""))
                         print(f"🎉 最终答案: {final_answer}")
 
                         # 保存到历史记录
@@ -345,7 +350,7 @@ class ReActAgent(Agent):
                         {
                             "role": "tool",
                             "tool_call_id": tool_call_id,
-                            "content": result["content"],
+                            "content": str(result["content"]),
                         }
                     )
                 else:
@@ -353,7 +358,7 @@ class ReActAgent(Agent):
                     print(f"🎬 调用工具: {tool_name}({arguments})")
 
                     # 执行工具（使用基类方法，支持字典参数）
-                    result = self._execute_tool_call(tool_name, arguments)
+                    tool_result = self._execute_tool_call(tool_name, arguments)
 
                     # 记录工具结果
                     if self.trace_logger:
@@ -362,23 +367,23 @@ class ReActAgent(Agent):
                             {
                                 "tool_name": tool_name,
                                 "tool_call_id": tool_call_id,
-                                "result": result,
+                                "result": tool_result,
                             },
                             step=current_step,
                         )
 
                     # 检查是否是错误
-                    if result.startswith("❌"):
-                        print(result)
+                    if tool_result.startswith("❌"):
+                        print(tool_result)
                     else:
-                        print(f"👀 观察: {result}")
+                        print(f"👀 观察: {tool_result}")
 
                     # 添加工具结果到消息
                     messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": tool_call_id,
-                            "content": result,
+                            "content": tool_result,
                         }
                     )
 
@@ -408,7 +413,7 @@ class ReActAgent(Agent):
 
     def _build_messages(self, input_text: str) -> List[Dict[str, str]]:
         """构建消息列表"""
-        messages = []
+        messages: List[Dict[str, str]] = []
 
         # 添加系统提示词
         if self.system_prompt:
@@ -424,7 +429,7 @@ class ReActAgent(Agent):
 
         复用基类的 _build_tool_schemas()，并追加 ReAct 内置工具
         """
-        schemas = []
+        schemas: List[Dict[str, Any]] = []
 
         # 1. 添加内置工具：Thought
         schemas.append(
@@ -499,7 +504,7 @@ class ReActAgent(Agent):
         on_tool_call: LifecycleHook = None,
         on_finish: LifecycleHook = None,
         on_error: LifecycleHook = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         异步执行 ReAct Agent（完整版本）
@@ -631,7 +636,7 @@ class ReActAgent(Agent):
                 # 检查是否有 Finish 工具
                 for tool_name, tool_call_id, result in tool_results:
                     if tool_name == "Finish" and result.get("finished"):
-                        final_answer = result["final_answer"]
+                        final_answer = str(result.get("final_answer", ""))
                         print(f"🎉 最终答案: {final_answer}")
 
                         self.add_message(Message(input_text, "user"))
@@ -724,7 +729,7 @@ class ReActAgent(Agent):
         tool_calls: List[Any],
         current_step: int,
         on_tool_call: LifecycleHook = None,
-    ) -> List[tuple]:
+    ) -> List[ToolExecutionResult]:
         """
         异步并行执行工具
 
@@ -740,11 +745,11 @@ class ReActAgent(Agent):
         Returns:
             [(tool_name, tool_call_id, result), ...]
         """
-        results = []
+        results: List[ToolExecutionResult] = []
 
         # 分组：内置工具 vs 用户工具
-        builtin_calls = []
-        user_calls = []
+        builtin_calls: List[Any] = []
+        user_calls: List[Any] = []
 
         for tc in tool_calls:
             if tc.name in self._builtin_tools:
@@ -800,11 +805,13 @@ class ReActAgent(Agent):
         # 2. 并行执行用户工具
         if user_calls:
             max_concurrent = getattr(self.config, "max_concurrent_tools", 3)
+            registry = self.tool_registry
+            assert registry is not None
 
             # 使用 Semaphore 限制并发数
             semaphore = asyncio.Semaphore(max_concurrent)
 
-            async def execute_one(tc):
+            async def execute_one(tc: Any) -> ToolExecutionResult:
                 async with semaphore:
                     tool_name = tc.name
                     tool_call_id = tc.id
@@ -831,20 +838,20 @@ class ReActAgent(Agent):
                     print(f"🎬 调用工具: {tool_name}({arguments})")
 
                     # 异步执行工具
-                    tool = self.tool_registry.get_tool(tool_name)
+                    tool = registry.get_tool(tool_name)
                     if not tool:
                         result_content = f"❌ 工具 {tool_name} 不存在"
                     else:
                         try:
                             tool_response = await tool.arun_with_timing(arguments)
-                            result_content = tool_response.text
+                            result_content = str(tool_response.text)
 
                             # 应用截断
                             truncate_result = self.truncator.truncate(
                                 tool_name=tool_name, output=result_content
                             )
-                            result_content = truncate_result.get(
-                                "preview", result_content
+                            result_content = str(
+                                truncate_result.get("preview", result_content)
                             )
                         except Exception as e:
                             result_content = f"❌ 工具执行失败: {str(e)}"
@@ -882,7 +889,7 @@ class ReActAgent(Agent):
         on_tool_call: LifecycleHook = None,
         on_finish: LifecycleHook = None,
         on_error: LifecycleHook = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """
         ReActAgent 真正的流式执行
@@ -940,7 +947,7 @@ class ReActAgent(Agent):
 
                 # LLM 流式调用
                 full_response = ""
-                tool_calls_data = []
+                tool_calls_data: List[Dict[str, Any]] = []
 
                 try:
                     # 使用 LLM 的异步流式方法
@@ -1126,7 +1133,7 @@ class ReActAgent(Agent):
         tool_calls: List[Any],
         current_step: int,
         on_tool_call: LifecycleHook = None,
-    ) -> List[tuple]:
+    ) -> List[ToolExecutionResult]:
         """
         异步执行工具调用（流式版本，发送工具调用开始事件）
 
@@ -1138,11 +1145,15 @@ class ReActAgent(Agent):
         Returns:
             List[tuple]: (tool_name, tool_call_id, result_dict) 列表
         """
-        results = []
+        results: List[ToolExecutionResult] = []
 
         # 分组：内置工具 vs 用户工具
-        builtin_calls = [tc for tc in tool_calls if tc.name in self._builtin_tools]
-        user_calls = [tc for tc in tool_calls if tc.name not in self._builtin_tools]
+        builtin_calls: List[Any] = [
+            tc for tc in tool_calls if tc.name in self._builtin_tools
+        ]
+        user_calls: List[Any] = [
+            tc for tc in tool_calls if tc.name not in self._builtin_tools
+        ]
 
         # 1. 串行执行内置工具
         for tc in builtin_calls:
@@ -1188,9 +1199,11 @@ class ReActAgent(Agent):
         # 2. 并行执行用户工具
         if user_calls:
             max_concurrent = getattr(self.config, "max_concurrent_tools", 3)
+            registry = self.tool_registry
+            assert registry is not None
             semaphore = asyncio.Semaphore(max_concurrent)
 
-            async def execute_one(tc):
+            async def execute_one(tc: Any) -> ToolExecutionResult:
                 async with semaphore:
                     tool_name = tc.name
                     tool_call_id = tc.id
@@ -1217,20 +1230,20 @@ class ReActAgent(Agent):
                     print(f"🔧 调用工具: {tool_name}({arguments})")
 
                     # 异步执行工具
-                    tool = self.tool_registry.get_tool(tool_name)
+                    tool = registry.get_tool(tool_name)
                     if not tool:
                         result_content = f"❌ 工具 {tool_name} 不存在"
                     else:
                         try:
                             tool_response = await tool.arun_with_timing(arguments)
-                            result_content = tool_response.text
+                            result_content = str(tool_response.text)
 
                             # 应用截断
                             truncate_result = self.truncator.truncate(
                                 tool_name=tool_name, output=result_content
                             )
-                            result_content = truncate_result.get(
-                                "preview", result_content
+                            result_content = str(
+                                truncate_result.get("preview", result_content)
                             )
                         except Exception as e:
                             result_content = f"❌ 工具执行失败: {str(e)}"

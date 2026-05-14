@@ -83,7 +83,7 @@ class RetryPolicy:
         if self.jitter > 0:
             j = max(0.0, min(1.0, self.jitter))
             base = base * (1.0 - j + 2.0 * j * random.random())
-        return max(0.0, base)
+        return float(max(0.0, base))
 
 
 # ==================== Retry 同步 ====================
@@ -315,9 +315,11 @@ def with_fallbacks(
             # 全部失败 → 抛最后一个错误，并附带前面的 errors
             final = errors[-1]
             try:
-                final.__notes__ = [
-                    f"primary + {len(fallbacks)} fallbacks 全部失败"
-                ]  # type: ignore[attr-defined]
+                setattr(
+                    final,
+                    "__notes__",
+                    [f"primary + {len(fallbacks)} fallbacks 全部失败"],
+                )
             except Exception:
                 pass
             raise final

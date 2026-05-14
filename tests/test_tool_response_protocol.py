@@ -221,6 +221,16 @@ class TestToolRegistryIntegration:
         assert resp.error_info["code"] == ToolErrorCode.NOT_FOUND
         assert "未找到" in resp.text or "不存在" in resp.text
 
+    def test_unregister_tool_alias_removes_registered_tool(self):
+        """测试 Agent 兼容接口 unregister_tool 能移除工具"""
+        registry = ToolRegistry()
+        registry.register_tool(CalculatorTool())
+
+        assert "python_calculator" in registry.list_tools()
+        assert registry.unregister_tool("python_calculator") is True
+        assert "python_calculator" not in registry.list_tools()
+        assert registry.unregister_tool("python_calculator") is False
+
 
 class TestFunctionToolException:
     """测试函数工具异常处理"""

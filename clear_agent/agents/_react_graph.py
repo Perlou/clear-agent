@@ -19,7 +19,16 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Dict, List, Optional, TYPE_CHECKING, TypedDict
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TYPE_CHECKING,
+    TypedDict,
+)
 
 from ..core.graph import (
     END,
@@ -119,7 +128,9 @@ def _build_tool_schemas(registry: Optional["ToolRegistry"]) -> List[Dict[str, An
 # ==================== 节点工厂 ====================
 
 
-def _make_llm_node(llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]):
+def _make_llm_node(
+    llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]
+) -> Callable[[ReActGraphState], Dict[str, Any]]:
     """LLM 推理节点
 
     职责：
@@ -176,7 +187,9 @@ def _make_llm_node(llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]):
     return llm_node
 
 
-def _make_tool_executor_node(registry: Optional["ToolRegistry"]):
+def _make_tool_executor_node(
+    registry: Optional["ToolRegistry"],
+) -> Callable[[ReActGraphState], Dict[str, Any]]:
     """工具执行节点
 
     职责：

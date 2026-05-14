@@ -476,6 +476,56 @@ def test_clear_agent_llm_ainvoke_falls_back_to_thread_pool():
     fake_sync.assert_called_once()
 
 
+def test_clear_agent_llm_ainvoke_with_tools_fallback_preserves_call_kwargs():
+    from clear_agent import ClearAgentLLM
+    from clear_agent.core.llm_response import LLMToolResponse
+
+    llm = ClearAgentLLM(
+        model="custom",
+        api_key="x",
+        base_url="https://example/v1",
+        temperature=0.4,
+        max_tokens=55,
+    )
+    llm._adapter.ainvoke_with_tools_async = None  # type: ignore[attr-defined]
+
+    fake_resp = LLMToolResponse(content="ok", tool_calls=[], model="custom", usage={})
+    fake_sync = MagicMock(return_value=fake_resp)
+    llm.invoke_with_tools = fake_sync  # type: ignore[method-assign]
+
+    out = asyncio.run(
+        llm.ainvoke_with_tools(
+            [{"role": "user", "content": "hi"}],
+            tools=[{"type": "function", "function": {"name": "x"}}],
+            tool_choice="required",
+            temperature=0.1,
+            max_tokens=77,
+        )
+    )
+
+    assert out.content == "ok"
+    call_kwargs = fake_sync.call_args.kwargs
+    assert call_kwargs["tool_choice"] == "required"
+    assert call_kwargs["temperature"] == 0.1
+    assert call_kwargs["max_tokens"] == 77
+
+
+def test_clear_agent_llm_stream_invoke_uses_default_temperature():
+    from clear_agent import ClearAgentLLM
+
+    llm = ClearAgentLLM(
+        model="custom",
+        api_key="x",
+        base_url="https://example/v1",
+        temperature=0.25,
+    )
+    llm._adapter.stream_invoke = MagicMock(return_value=iter(["a", "b"]))
+
+    assert list(llm.stream_invoke([{"role": "user", "content": "hi"}])) == ["a", "b"]
+
+    assert llm._adapter.stream_invoke.call_args.kwargs["temperature"] == 0.25
+
+
 # ==================== Section G: 顶层导入 ====================
 
 

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 try:
     import numpy as np  # type: ignore
@@ -54,7 +54,7 @@ class EmbeddingModel:
     子类需实现 ``encode(texts)`` 和 ``dimension`` property。
     """
 
-    def encode(self, texts: Union[str, List[str]]):
+    def encode(self, texts: Union[str, List[str]]) -> Any:
         raise NotImplementedError
 
     @property
@@ -68,9 +68,9 @@ class LocalTransformerEmbedding(EmbeddingModel):
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
         self.model_name = model_name
         self._backend: Optional[str] = None  # "st" 或 "hf"
-        self._st_model = None
-        self._hf_tokenizer = None
-        self._hf_model = None
+        self._st_model: Any = None
+        self._hf_tokenizer: Any = None
+        self._hf_model: Any = None
         self._dimension: Optional[int] = None
         self._load_backend()
 
@@ -114,7 +114,7 @@ class LocalTransformerEmbedding(EmbeddingModel):
             "  pip install transformers torch"
         )
 
-    def encode(self, texts: Union[str, List[str]]):
+    def encode(self, texts: Union[str, List[str]]) -> Any:
         if isinstance(texts, str):
             inputs = [texts]
             single = True
@@ -123,11 +123,16 @@ class LocalTransformerEmbedding(EmbeddingModel):
             single = False
 
         if self._backend == "st":
+            if self._st_model is None:
+                raise RetrievalException("sentence-transformers 后端未初始化")
             vecs = self._st_model.encode(inputs)
             if hasattr(vecs, "tolist"):
                 vecs = [v for v in vecs]
         else:
             import torch  # type: ignore
+
+            if self._hf_tokenizer is None or self._hf_model is None:
+                raise RetrievalException("transformers 后端未初始化")
 
             tokenized = self._hf_tokenizer(
                 inputs,
@@ -163,7 +168,7 @@ class TFIDFEmbedding(EmbeddingModel):
 
     def __init__(self, max_features: int = 1000):
         self.max_features = max_features
-        self._vectorizer = None
+        self._vectorizer: Any = None
         self._is_fitted = False
         self._dimension = max_features
         self._init_vectorizer()
@@ -187,7 +192,7 @@ class TFIDFEmbedding(EmbeddingModel):
         self._is_fitted = True
         self._dimension = len(self._vectorizer.get_feature_names_out())
 
-    def encode(self, texts: Union[str, List[str]]):
+    def encode(self, texts: Union[str, List[str]]) -> Any:
         if not self._is_fitted:
             raise RetrievalException("TF-IDF 未训练，请先调用 fit()")
         if isinstance(texts, str):
@@ -220,7 +225,7 @@ class DashScopeEmbedding(EmbeddingModel):
         model_name: str = "text-embedding-v3",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-    ):
+    ) -> None:
         self.model_name = model_name
         self.api_key = api_key
         self.base_url = base_url
@@ -235,11 +240,11 @@ class DashScopeEmbedding(EmbeddingModel):
         try:
             if self.api_key:
                 os.environ["DASHSCOPE_API_KEY"] = self.api_key
-            import dashscope  # noqa: F401  # type: ignore
+            import dashscope  # type: ignore[import-untyped]  # noqa: F401
         except ImportError:
             raise ImportError("请安装 dashscope: pip install dashscope")
 
-    def encode(self, texts: Union[str, List[str]]):
+    def encode(self, texts: Union[str, List[str]]) -> Any:
         if isinstance(texts, str):
             inputs = [texts]
             single = True
@@ -272,7 +277,7 @@ class DashScopeEmbedding(EmbeddingModel):
             return vecs
 
         # SDK 模式
-        from dashscope import TextEmbedding  # type: ignore
+        from dashscope import TextEmbedding  # type: ignore[import-untyped]
 
         rsp = TextEmbedding.call(model=self.model_name, input=inputs)
         embeddings_obj = None
@@ -302,7 +307,7 @@ class DashScopeEmbedding(EmbeddingModel):
 # ==============
 
 
-def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingModel:
+def create_embedding_model(model_type: str = "local", **kwargs: Any) -> EmbeddingModel:
     """显式创建嵌入模型实例
 
     Args:
@@ -322,8 +327,21 @@ def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingMode
         raise ValueError(f"不支持的嵌入模型类型: {model_type}")
 
 
+def _filter_embedding_kwargs(model_type: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Return kwargs accepted by the selected embedding backend."""
+    if model_type in ("local", "sentence_transformer", "huggingface"):
+        allowed = {"model_name"}
+    elif model_type == "dashscope":
+        allowed = {"model_name", "api_key", "base_url"}
+    elif model_type == "tfidf":
+        allowed = {"max_features"}
+    else:
+        allowed = set(kwargs)
+    return {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+
+
 def create_embedding_model_with_fallback(
-    preferred_type: str = "dashscope", **kwargs
+    preferred_type: str = "dashscope", **kwargs: Any
 ) -> EmbeddingModel:
     """带回退的创建：``preferred -> dashscope -> local -> tfidf``"""
     if preferred_type in ("sentence_transformer", "huggingface"):
@@ -335,7 +353,7 @@ def create_embedding_model_with_fallback(
     last_err: Optional[Exception] = None
     for t in fallback:
         try:
-            return create_embedding_model(t, **kwargs)
+            return create_embedding_model(t, **_filter_embedding_kwargs(t, kwargs))
         except Exception as e:
             last_err = e
             continue

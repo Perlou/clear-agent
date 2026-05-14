@@ -204,6 +204,22 @@ def test_uses_existing_collection(fake_qdrant):
     fake_qdrant["client"].create_collection.assert_not_called()
 
 
+def test_existing_collection_vector_size_mismatch_raises(fake_qdrant):
+    existing = MagicMock()
+    existing.name = "my_col"
+    coll_resp = MagicMock()
+    coll_resp.collections = [existing]
+    fake_qdrant["client"].get_collections.return_value = coll_resp
+
+    info = MagicMock()
+    info.config.params.vectors.size = 384
+    info.config.params.vectors.distance = fake_qdrant["Distance"].COSINE
+    fake_qdrant["client"].get_collection.return_value = info
+
+    with pytest.raises(RetrievalException, match="向量维度不匹配"):
+        QdrantVectorStore(collection_name="my_col", vector_size=768)
+
+
 # ==================== Section E: add_vectors ====================
 
 
@@ -490,6 +506,13 @@ def test_connection_manager_different_url_different_instance(fake_qdrant):
     QdrantConnectionManager.reset()
     a = QdrantConnectionManager.get_instance(url="http://x", collection_name="c")
     b = QdrantConnectionManager.get_instance(url="http://y", collection_name="c")
+    assert a is not b
+
+
+def test_connection_manager_different_vector_size_different_instance(fake_qdrant):
+    QdrantConnectionManager.reset()
+    a = QdrantConnectionManager.get_instance(collection_name="c", vector_size=384)
+    b = QdrantConnectionManager.get_instance(collection_name="c", vector_size=768)
     assert a is not b
 
 

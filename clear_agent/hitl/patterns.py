@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from ..core.interrupt import interrupt
 
@@ -56,8 +56,8 @@ def approval(
 
     # 兼容 dict 形式（{"choice": "approve"}）和直接字符串
     if isinstance(decision, dict) and "choice" in decision:
-        return decision["choice"]
-    return decision
+        return str(decision["choice"])
+    return cast(str, decision)
 
 
 # ==================== Edit State ====================
@@ -171,7 +171,7 @@ def validate_tool_args(
 
     # 用户改了参数？
     if "args" in decision and isinstance(decision["args"], dict):
-        return decision["args"]
+        return cast(Dict[str, Any], decision["args"])
     return dict(proposed_args)
 
 

@@ -166,6 +166,103 @@ def test_anthropic_ainvoke_with_tools_async_strips_openai_tool_choice():
     assert "tool_choice" not in call_kwargs
 
 
+def test_anthropic_ainvoke_with_tools_async_converts_openai_tool_schema():
+    """OpenAI function schema 应转成 Anthropic tool schema。"""
+    a = _make_anthropic_adapter()
+    fake_resp = MagicMock()
+    fake_resp.content = []
+    fake_resp.usage.input_tokens = 0
+    fake_resp.usage.output_tokens = 0
+    fake_client = MagicMock()
+    fake_client.messages.create = AsyncMock(return_value=fake_resp)
+    a._async_client = fake_client
+
+    openai_tool = {
+        "type": "function",
+        "function": {
+            "name": "calculator",
+            "description": "Run a calculation",
+            "parameters": {
+                "type": "object",
+                "properties": {"expression": {"type": "string"}},
+                "required": ["expression"],
+            },
+        },
+    }
+
+    asyncio.run(
+        a.ainvoke_with_tools_async(
+            [{"role": "user", "content": "calc"}],
+            tools=[openai_tool],
+        )
+    )
+
+    call_kwargs = fake_client.messages.create.call_args.kwargs
+    assert call_kwargs["tools"] == [
+        {
+            "name": "calculator",
+            "description": "Run a calculation",
+            "input_schema": openai_tool["function"]["parameters"],
+        }
+    ]
+
+
+def test_anthropic_ainvoke_with_tools_async_converts_openai_tool_messages():
+    """OpenAI assistant/tool messages 应转成 Anthropic tool_use/tool_result blocks。"""
+    a = _make_anthropic_adapter()
+    fake_resp = MagicMock()
+    fake_resp.content = []
+    fake_resp.usage.input_tokens = 0
+    fake_resp.usage.output_tokens = 0
+    fake_client = MagicMock()
+    fake_client.messages.create = AsyncMock(return_value=fake_resp)
+    a._async_client = fake_client
+
+    asyncio.run(
+        a.ainvoke_with_tools_async(
+            [
+                {"role": "user", "content": "calc"},
+                {
+                    "role": "assistant",
+                    "content": "using a tool",
+                    "tool_calls": [
+                        {
+                            "id": "toolu_1",
+                            "type": "function",
+                            "function": {
+                                "name": "calculator",
+                                "arguments": '{"expression": "1+1"}',
+                            },
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "toolu_1", "content": "2"},
+            ],
+            tools=[],
+        )
+    )
+
+    messages = fake_client.messages.create.call_args.kwargs["messages"]
+    assert messages[1] == {
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "using a tool"},
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "calculator",
+                "input": {"expression": "1+1"},
+            },
+        ],
+    }
+    assert messages[2] == {
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1", "content": "2"}
+        ],
+    }
+
+
 def test_anthropic_ainvoke_with_tools_async_propagates_failure():
     a = _make_anthropic_adapter()
     fake_client = MagicMock()

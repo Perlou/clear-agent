@@ -12,7 +12,16 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Annotated, Any, Dict, List, Optional, TYPE_CHECKING, TypedDict
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TYPE_CHECKING,
+    TypedDict,
+)
 
 from ..core.checkpoint import BaseCheckpointer
 from ..core.config import Config
@@ -112,7 +121,9 @@ def _parse_plan(text: str) -> List[str]:
     return [ln for ln in lines if ln]
 
 
-def _make_plan_node(llm: "ClearAgentLLM"):
+def _make_plan_node(
+    llm: "ClearAgentLLM",
+) -> Callable[[PlanSolveGraphState], Dict[str, Any]]:
     def plan_node(state: PlanSolveGraphState) -> Dict[str, Any]:
         prompt = _PLAN_PROMPT.format(question=state.get("question", ""))
         response = llm.invoke([{"role": "user", "content": prompt}])
@@ -127,7 +138,9 @@ def _make_plan_node(llm: "ClearAgentLLM"):
     return plan_node
 
 
-def _make_execute_node(llm: "ClearAgentLLM"):
+def _make_execute_node(
+    llm: "ClearAgentLLM",
+) -> Callable[[PlanSolveGraphState], Dict[str, Any]]:
     def execute_node(state: PlanSolveGraphState) -> Dict[str, Any]:
         plan = state.get("plan") or []
         idx = state.get("current_step_idx") or 0
@@ -155,7 +168,9 @@ def _make_execute_node(llm: "ClearAgentLLM"):
     return execute_node
 
 
-def _make_finalize_node(llm: "ClearAgentLLM"):
+def _make_finalize_node(
+    llm: "ClearAgentLLM",
+) -> Callable[[PlanSolveGraphState], Dict[str, Any]]:
     def finalize_node(state: PlanSolveGraphState) -> Dict[str, Any]:
         plan = state.get("plan") or []
         results = state.get("step_results") or []

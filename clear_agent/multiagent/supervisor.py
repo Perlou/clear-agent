@@ -39,6 +39,7 @@ from typing import (
     Optional,
     TYPE_CHECKING,
     TypedDict,
+    Union,
 )
 
 from ..core.checkpoint import BaseCheckpointer
@@ -133,7 +134,10 @@ def build_supervisor_graph(
         captured_fn = fn
         captured_name = name
 
-        def _make_worker_wrapper(worker_fn, worker_name):
+        def _make_worker_wrapper(
+            worker_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+            worker_name: str,
+        ) -> Callable[[SupervisorState], Dict[str, Any]]:
             def _wrapper(state: SupervisorState) -> Dict[str, Any]:
                 out = worker_fn(dict(state))
                 if not isinstance(out, dict):
@@ -159,7 +163,10 @@ def build_supervisor_graph(
         return target
 
     g.add_edge(START, "supervisor")
-    routing = {"end": END, **{name: name for name in workers}}
+    routing: Dict[str, Union[str, List[str]]] = {
+        "end": END,
+        **{name: name for name in workers},
+    }
     g.add_conditional_edges("supervisor", _route_after_supervisor, routing)
 
     # 每个 worker 跑完回到 supervisor

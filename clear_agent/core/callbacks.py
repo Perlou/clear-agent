@@ -38,7 +38,7 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
 
 logger = logging.getLogger(__name__)
@@ -148,7 +148,7 @@ class CallbackManager:
         self,
         handlers: Optional[List[BaseCallbackHandler]] = None,
         swallow_errors: bool = True,
-    ):
+    ) -> None:
         self.handlers: List[BaseCallbackHandler] = list(handlers or [])
         self.swallow_errors = swallow_errors
 
@@ -200,7 +200,7 @@ class CallbackManager:
             try:
                 result = fn(*args, **kwargs)
                 if _inspect.isawaitable(result):
-                    await result
+                    await cast(Awaitable[Any], result)
             except Exception as e:
                 if self.swallow_errors:
                     logger.warning(
@@ -216,47 +216,53 @@ class CallbackManager:
 class LoggingCallbackHandler(BaseCallbackHandler):
     """把所有事件打印到 ``logging``"""
 
-    def __init__(self, log_level: int = logging.INFO):
+    def __init__(self, log_level: int = logging.INFO) -> None:
         self.log_level = log_level
         self._logger = logging.getLogger("clear_agent.callbacks")
 
     def _log(self, msg: str) -> None:
         self._logger.log(self.log_level, msg)
 
-    def on_llm_start(self, prompts, model=None, **kw):
+    def on_llm_start(
+        self, prompts: List[Any], model: Optional[str] = None, **kw: Any
+    ) -> None:
         n = len(prompts) if hasattr(prompts, "__len__") else "?"
         self._log(f"🧠 LLM start: model={model} n_messages={n}")
 
-    def on_llm_end(self, response, **kw):
+    def on_llm_end(self, response: Any, **kw: Any) -> None:
         usage = getattr(response, "usage", None) or {}
         total = usage.get("total_tokens", "?") if isinstance(usage, dict) else "?"
         self._log(f"✅ LLM end: tokens={total}")
 
-    def on_llm_error(self, error, **kw):
+    def on_llm_error(self, error: BaseException, **kw: Any) -> None:
         self._log(f"❌ LLM error: {type(error).__name__}: {error}")
 
-    def on_tool_start(self, tool_name, arguments, **kw):
+    def on_tool_start(
+        self, tool_name: str, arguments: Dict[str, Any], **kw: Any
+    ) -> None:
         self._log(f"🔧 Tool start: {tool_name} args={arguments}")
 
-    def on_tool_end(self, tool_name, response, **kw):
+    def on_tool_end(self, tool_name: str, response: Any, **kw: Any) -> None:
         status = getattr(response, "status", "?")
         if hasattr(status, "value"):
             status = status.value
         self._log(f"✅ Tool end: {tool_name} status={status}")
 
-    def on_tool_error(self, tool_name, error, **kw):
+    def on_tool_error(
+        self, tool_name: str, error: BaseException, **kw: Any
+    ) -> None:
         self._log(f"❌ Tool error: {tool_name}: {error}")
 
-    def on_node_start(self, node_name, state, **kw):
+    def on_node_start(self, node_name: str, state: Any, **kw: Any) -> None:
         self._log(f"▶ Node start: {node_name}")
 
-    def on_node_end(self, node_name, state, **kw):
+    def on_node_end(self, node_name: str, state: Any, **kw: Any) -> None:
         self._log(f"⏹ Node end: {node_name}")
 
-    def on_retriever_start(self, query, **kw):
+    def on_retriever_start(self, query: str, **kw: Any) -> None:
         self._log(f"🔍 Retriever start: query={query[:60]!r}")
 
-    def on_retriever_end(self, results, **kw):
+    def on_retriever_end(self, results: List[Any], **kw: Any) -> None:
         n = len(results) if hasattr(results, "__len__") else "?"
         self._log(f"✅ Retriever end: hits={n}")
 
@@ -264,7 +270,7 @@ class LoggingCallbackHandler(BaseCallbackHandler):
 class MetricsCallbackHandler(BaseCallbackHandler):
     """累计 LLM / 工具 / 节点的调用次数与延迟"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.metrics: Dict[str, Dict[str, Any]] = {
             "llm": {"calls": 0, "errors": 0, "total_tokens": 0, "total_latency_ms": 0},
             "tool": {"calls": 0, "errors": 0, "by_name": {}},
@@ -275,12 +281,14 @@ class MetricsCallbackHandler(BaseCallbackHandler):
         self._tool_start_ts: Dict[tuple, float] = {}
         self._node_start_ts: Dict[str, float] = {}
 
-    def on_llm_start(self, prompts, model=None, **kw):
+    def on_llm_start(
+        self, prompts: List[Any], model: Optional[str] = None, **kw: Any
+    ) -> None:
         self.metrics["llm"]["calls"] += 1
         # 用 prompts id 关联 start/end（可能并发）
         self._llm_start_ts[id(prompts)] = time.time()
 
-    def on_llm_end(self, response, **kw):
+    def on_llm_end(self, response: Any, **kw: Any) -> None:
         usage = getattr(response, "usage", None) or {}
         if isinstance(usage, dict):
             self.metrics["llm"]["total_tokens"] += int(usage.get("total_tokens", 0) or 0)
@@ -289,10 +297,12 @@ class MetricsCallbackHandler(BaseCallbackHandler):
             _, ts = self._llm_start_ts.popitem()
             self.metrics["llm"]["total_latency_ms"] += int((time.time() - ts) * 1000)
 
-    def on_llm_error(self, error, **kw):
+    def on_llm_error(self, error: BaseException, **kw: Any) -> None:
         self.metrics["llm"]["errors"] += 1
 
-    def on_tool_start(self, tool_name, arguments, **kw):
+    def on_tool_start(
+        self, tool_name: str, arguments: Dict[str, Any], **kw: Any
+    ) -> None:
         self.metrics["tool"]["calls"] += 1
         by_name = self.metrics["tool"]["by_name"].setdefault(
             tool_name, {"calls": 0, "errors": 0}
@@ -300,33 +310,35 @@ class MetricsCallbackHandler(BaseCallbackHandler):
         by_name["calls"] += 1
         self._tool_start_ts[(tool_name, id(arguments))] = time.time()
 
-    def on_tool_end(self, tool_name, response, **kw):
+    def on_tool_end(self, tool_name: str, response: Any, **kw: Any) -> None:
         pass  # 占位 hook；可扩展
 
-    def on_tool_error(self, tool_name, error, **kw):
+    def on_tool_error(
+        self, tool_name: str, error: BaseException, **kw: Any
+    ) -> None:
         self.metrics["tool"]["errors"] += 1
         by_name = self.metrics["tool"]["by_name"].setdefault(
             tool_name, {"calls": 0, "errors": 0}
         )
         by_name["errors"] += 1
 
-    def on_node_start(self, node_name, state, **kw):
+    def on_node_start(self, node_name: str, state: Any, **kw: Any) -> None:
         self.metrics["node"]["calls"] += 1
         by_name = self.metrics["node"]["by_name"].setdefault(node_name, 0)
         self.metrics["node"]["by_name"][node_name] = by_name + 1
         self._node_start_ts[node_name] = time.time()
 
-    def on_node_end(self, node_name, state, **kw):
+    def on_node_end(self, node_name: str, state: Any, **kw: Any) -> None:
         ts = self._node_start_ts.pop(node_name, None)
         if ts is not None:
             self.metrics["node"]["total_latency_ms"] += int(
                 (time.time() - ts) * 1000
             )
 
-    def on_retriever_start(self, query, **kw):
+    def on_retriever_start(self, query: str, **kw: Any) -> None:
         self.metrics["retriever"]["calls"] += 1
 
-    def on_retriever_end(self, results, **kw):
+    def on_retriever_end(self, results: List[Any], **kw: Any) -> None:
         n = len(results) if hasattr(results, "__len__") else 0
         self.metrics["retriever"]["total_hits"] += n
 

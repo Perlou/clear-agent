@@ -19,7 +19,7 @@
 
 from typing import Dict, Any, List
 from ..base import Tool, ToolParameter
-from ...skills.loader import SkillLoader
+from ...skills.loader import Skill, SkillLoader
 from ..response import ToolResponse
 from ..errors import ToolErrorCode
 
@@ -143,7 +143,7 @@ class SkillTool(Tool):
                 context={"params_input": parameters, "error": str(e)},
             )
 
-    def _get_resources_hint(self, skill) -> str:
+    def _get_resources_hint(self, skill: Skill) -> str:
         """生成资源提示文本
 
         Args:

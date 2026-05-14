@@ -27,6 +27,7 @@ from typing import (
     List,
     Optional,
     TypedDict,
+    Union,
 )
 
 from ..core.checkpoint import BaseCheckpointer
@@ -132,7 +133,10 @@ def build_swarm_graph(
         captured_fn = fn
         captured_name = name
 
-        def _make_agent_wrapper(agent_fn, agent_name):
+        def _make_agent_wrapper(
+            agent_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+            agent_name: str,
+        ) -> Callable[[SwarmState], Dict[str, Any]]:
             def _wrapper(state: SwarmState) -> Dict[str, Any]:
                 out = agent_fn(dict(state))
                 if not isinstance(out, dict):
@@ -165,7 +169,10 @@ def build_swarm_graph(
         return target
 
     g.add_edge(START, "_swarm_dispatch")
-    routing = {"end": END, **{name: name for name in agents}}
+    routing: Dict[str, Union[str, List[str]]] = {
+        "end": END,
+        **{name: name for name in agents},
+    }
     g.add_conditional_edges("_swarm_dispatch", _route, routing)
     # 每个 agent 完成后回到 dispatch 重路由
     for name in agents:

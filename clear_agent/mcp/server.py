@@ -39,12 +39,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
 
 from .adapter import MCPException, clear_agent_tool_to_mcp_schema
 
 if TYPE_CHECKING:
     from ..tools.registry import ToolRegistry
+    from ..tools.base import Tool
 
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class MCPServer:
         registry: "ToolRegistry",
         name: str = "clear-agent",
         version: str = "2.0.0",
-    ):
+    ) -> None:
         self.registry = registry
         self.name = name
         self.version = version
@@ -105,7 +106,7 @@ class MCPServer:
 
     # ==================== 内部 ====================
 
-    def _iter_registered_tools(self):
+    def _iter_registered_tools(self) -> Iterator["Tool"]:
         """从 ToolRegistry 取出全部工具（兼容多种 registry 接口）"""
         get_all = getattr(self.registry, "get_all_tools", None)
         if callable(get_all):
@@ -170,7 +171,7 @@ class MCPServer:
             "参考 docs/mcp-guide.md 给出的 ASGI 集成示例。"
         )
 
-    def _find_tool_by_name(self, name: str):
+    def _find_tool_by_name(self, name: str) -> Optional["Tool"]:
         for t in self._iter_registered_tools():
             if t.name == name:
                 return t

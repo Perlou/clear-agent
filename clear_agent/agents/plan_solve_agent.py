@@ -17,7 +17,9 @@ if TYPE_CHECKING:
 class Planner:
     """规划器 - 负责将复杂问题分解为简单步骤（使用 Function Calling）"""
 
-    def __init__(self, llm_client: ClearAgentLLM, system_prompt: Optional[str] = None):
+    def __init__(
+        self, llm_client: ClearAgentLLM, system_prompt: Optional[str] = None
+    ) -> None:
         self.llm_client = llm_client
         self.system_prompt = (
             system_prompt
@@ -25,7 +27,7 @@ class Planner:
 请确保计划中的每个步骤都是一个独立的、可执行的子任务，并且严格按照逻辑顺序排列。"""
         )
 
-    def plan(self, question: str, **kwargs) -> List[str]:
+    def plan(self, question: str, **kwargs: Any) -> List[str]:
         """
         生成执行计划（使用 Function Calling）
 
@@ -78,7 +80,8 @@ class Planner:
             if response.tool_calls:
                 tool_call = response.tool_calls[0]
                 arguments = json.loads(tool_call.arguments)
-                plan = arguments.get("steps", [])
+                steps = arguments.get("steps", [])
+                plan = [str(step) for step in steps] if isinstance(steps, list) else []
 
                 print(f"✅ 计划已生成:")
                 for i, step in enumerate(plan, 1):
@@ -104,7 +107,7 @@ class Executor:
         tool_registry: Optional["ToolRegistry"] = None,
         enable_tool_calling: bool = True,
         max_tool_iterations: int = 3,
-    ):
+    ) -> None:
         self.llm_client = llm_client
         self.system_prompt = (
             system_prompt
@@ -115,7 +118,7 @@ class Executor:
         self.enable_tool_calling = enable_tool_calling and tool_registry is not None
         self.max_tool_iterations = max_tool_iterations
 
-    def execute(self, question: str, plan: List[str], **kwargs) -> str:
+    def execute(self, question: str, plan: List[str], **kwargs: Any) -> str:
         """
         按计划执行任务（支持 Function Calling）
 
@@ -127,7 +130,7 @@ class Executor:
         Returns:
             最终答案
         """
-        history = []
+        history: List[Dict[str, str]] = []
         final_answer = ""
 
         print("\n--- 正在执行计划 ---")
@@ -171,7 +174,7 @@ class Executor:
             ]
         )
 
-    def _execute_step(self, context: str, **kwargs) -> str:
+    def _execute_step(self, context: str, **kwargs: Any) -> str:
         """
         执行单个步骤（支持 Function Calling）
 
@@ -182,7 +185,7 @@ class Executor:
         Returns:
             步骤执行结果
         """
-        messages = [
+        messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": context},
         ]
@@ -303,7 +306,7 @@ class PlanSolveAgent(Agent):
         tool_registry: Optional["ToolRegistry"] = None,
         enable_tool_calling: bool = True,
         max_tool_iterations: int = 3,
-    ):
+    ) -> None:
         """
         初始化PlanSolveAgent
 
@@ -329,7 +332,7 @@ class PlanSolveAgent(Agent):
             max_tool_iterations=max_tool_iterations,
         )
 
-    def as_graph(self, checkpointer=None):
+    def as_graph(self, checkpointer: Any = None) -> Any:
         """返回等价的 Plan-Solve StateGraph"""
         from ._plan_solve_graph import build_plan_solve_graph
 
@@ -337,7 +340,7 @@ class PlanSolveAgent(Agent):
             llm=self.llm, config=self.config, checkpointer=checkpointer
         )
 
-    def run(self, input_text: str, **kwargs) -> str:
+    def run(self, input_text: str, **kwargs: Any) -> str:
         """
         运行Plan and Solve Agent
 
@@ -378,7 +381,7 @@ class PlanSolveAgent(Agent):
         on_start: LifecycleHook = None,
         on_finish: LifecycleHook = None,
         on_error: LifecycleHook = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """
         PlanAgent 真正的流式执行
@@ -440,7 +443,7 @@ class PlanSolveAgent(Agent):
             )
 
             # 阶段 2：执行计划
-            step_results = []
+            step_results: List[str] = []
 
             for i, step_description in enumerate(plan):
                 step_num = i + 1

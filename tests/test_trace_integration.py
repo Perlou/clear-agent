@@ -31,7 +31,12 @@ class TestTraceIntegration:
         )
 
         # 创建 LLM（使用 mock）
-        llm = ClearAgentLLM(provider="openai", model="gpt-3.5-turbo")
+        llm = ClearAgentLLM(
+            provider="openai",
+            model="gpt-3.5-turbo",
+            api_key="test-key",
+            base_url="https://example.com/v1",
+        )
 
         # 创建工具注册表
         tool_registry = ToolRegistry()
@@ -54,7 +59,12 @@ class TestTraceIntegration:
         """测试禁用 Trace"""
         config = Config(trace_enabled=False)
 
-        llm = ClearAgentLLM(provider="openai", model="gpt-3.5-turbo")
+        llm = ClearAgentLLM(
+            provider="openai",
+            model="gpt-3.5-turbo",
+            api_key="test-key",
+            base_url="https://example.com/v1",
+        )
         agent = ReActAgent(name="TestAgent", llm=llm, config=config)
 
         # 验证 TraceLogger 未创建
@@ -64,7 +74,12 @@ class TestTraceIntegration:
         """测试 Trace 文件生成"""
         config = Config(trace_enabled=True, trace_dir=self.temp_dir)
 
-        llm = ClearAgentLLM(provider="openai", model="gpt-3.5-turbo")
+        llm = ClearAgentLLM(
+            provider="openai",
+            model="gpt-3.5-turbo",
+            api_key="test-key",
+            base_url="https://example.com/v1",
+        )
         agent = ReActAgent(name="TestAgent", llm=llm, config=config)
 
         # 手动记录一些事件并 finalize

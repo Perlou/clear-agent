@@ -1,7 +1,7 @@
 """Agent 基类"""
 
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING, AsyncGenerator
+from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING, AsyncGenerator, cast
 import asyncio
 from .message import Message
 from .llm import ClearAgentLLM
@@ -24,7 +24,7 @@ class Agent(ABC):
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
         tool_registry: Optional["ToolRegistry"] = None,
-    ):
+    ) -> None:
         self.name = name
         self.llm = llm
         self.system_prompt = system_prompt
@@ -49,7 +49,9 @@ class Agent(ABC):
         # Token 计数器（缓存 + 增量）
         from ..context.token_counter import TokenCounter
 
-        self.token_counter = TokenCounter(model=self.llm.model)
+        self.token_counter = TokenCounter(
+            model=self.llm.model or self.config.default_model
+        )
         self._history_token_count = 0
 
         # 可观测性
@@ -110,16 +112,16 @@ class Agent(ABC):
     @property
     def _history(self) -> List[Message]:
         """向后兼容代理：访问历史"""
-        return self.history_manager.get_history()
+        return cast(List[Message], self.history_manager.get_history())
 
     @_history.setter
-    def _history(self, value: List[Message]):
+    def _history(self, value: List[Message]) -> None:
         self.history_manager.clear()
         for msg in value:
             self.history_manager.append(msg)
 
     @abstractmethod
-    def run(self, input_text: str, **kwargs) -> str:
+    def run(self, input_text: str, **kwargs: Any) -> str:
         """运行 Agent（同步）"""
         pass
 
@@ -130,9 +132,10 @@ class Agent(ABC):
         input_text: str,
         on_start: LifecycleHook = None,
         on_step: LifecycleHook = None,
+        on_tool_call: LifecycleHook = None,
         on_finish: LifecycleHook = None,
         on_error: LifecycleHook = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """异步执行 Agent；默认走线程池包装 ``run()``，子类可覆写真异步实现
 
@@ -158,8 +161,8 @@ class Agent(ABC):
             raise
 
     async def arun_stream(
-        self, input_text: str, **kwargs
-    ) -> AsyncGenerator[AgentEvent, None]:
+        self, input_text: str, **kwargs: Any
+    ) -> AsyncGenerator[Any, None]:
         """
         流式执行 Agent（基础版本）
 
@@ -196,7 +199,9 @@ class Agent(ABC):
             )
             raise
 
-    async def _emit_event(self, event_type: EventType, hook: LifecycleHook, **data):
+    async def _emit_event(
+        self, event_type: EventType, hook: LifecycleHook, **data: Any
+    ) -> None:
         """触发事件并调用钩子
 
         Args:
@@ -225,7 +230,7 @@ class Agent(ABC):
                         "hook_error", {"event_type": event_type.value, "error": str(e)}
                     )
 
-    def add_message(self, message: Message):
+    def add_message(self, message: Message) -> None:
         """添加消息到历史记录
 
         自动检查是否需要压缩历史
@@ -246,7 +251,7 @@ class Agent(ABC):
             if history_len % self.config.auto_save_interval == 0:
                 self._auto_save()
 
-    def clear_history(self):
+    def clear_history(self) -> None:
         """清空历史记录"""
         self.history_manager.clear()
         # 重置 Token 计数
@@ -255,7 +260,7 @@ class Agent(ABC):
 
     def get_history(self) -> List[Message]:
         """获取历史记录"""
-        return self.history_manager.get_history()
+        return cast(List[Message], self.history_manager.get_history())
 
     def _should_compress(self) -> bool:
         """判断是否需要压缩历史
@@ -269,7 +274,7 @@ class Agent(ABC):
         threshold = int(self.config.context_window * self.config.compression_threshold)
         return self._history_token_count > threshold
 
-    def _compress_history(self):
+    def _compress_history(self) -> None:
         """压缩历史
 
         默认使用简单摘要策略
@@ -402,7 +407,7 @@ class Agent(ABC):
 
         return "\n\n".join(formatted_lines)
 
-    def _get_summary_llm(self):
+    def _get_summary_llm(self) -> ClearAgentLLM:
         """获取摘要专用 LLM（轻量模型）
 
         使用独立的轻量 LLM 实例，节省成本
@@ -610,7 +615,7 @@ class Agent(ABC):
                 elif response.status == ToolStatus.PARTIAL:
                     return f"⚠️ 部分成功: {response.text}"
                 else:
-                    return response.text
+                    return str(response.text)
             except Exception as exc:
                 return f"❌ 工具调用失败：{exc}"
 
@@ -634,7 +639,7 @@ class Agent(ABC):
                 elif response.status == ToolStatus.PARTIAL:
                     return f"⚠️ 部分成功: {response.text}"
                 else:
-                    return response.text
+                    return str(response.text)
             except Exception as exc:
                 return f"❌ 工具调用失败：{exc}"
 
@@ -642,7 +647,7 @@ class Agent(ABC):
 
     # ==================== 会话持久化能力 ====================
 
-    def _auto_save(self):
+    def _auto_save(self) -> None:
         """自动保存会话（静默失败）"""
         if not self.session_store:
             return
@@ -694,7 +699,7 @@ class Agent(ABC):
             session_name=session_name,
         )
 
-        return filepath
+        return str(filepath)
 
     def load_session(self, filepath: str, check_consistency: bool = True) -> None:
         """加载会话
@@ -763,7 +768,7 @@ class Agent(ABC):
         if not self.session_store:
             return []
 
-        return self.session_store.list_sessions()
+        return cast(List[Dict[str, Any]], self.session_store.list_sessions())
 
     def _get_agent_config(self) -> Dict[str, Any]:
         """获取 Agent 配置信息
@@ -781,8 +786,9 @@ class Agent(ABC):
         }
 
         # 添加 max_steps（如果存在）
-        if hasattr(self, "max_steps"):
-            config["max_steps"] = self.max_steps
+        max_steps = getattr(self, "max_steps", None)
+        if max_steps is not None:
+            config["max_steps"] = max_steps
 
         return config
 
@@ -816,14 +822,14 @@ class Agent(ABC):
         schema_str = json.dumps(tools_signature, sort_keys=True)
         return sha256(schema_str.encode()).hexdigest()[:16]
 
-    def _get_read_cache(self) -> Dict[str, Dict]:
+    def _get_read_cache(self) -> Dict[str, Dict[Any, Any]]:
         """获取 Read 工具的元数据缓存
 
         Returns:
             元数据缓存字典
         """
         if self.tool_registry and hasattr(self.tool_registry, "read_metadata_cache"):
-            return self.tool_registry.read_metadata_cache
+            return cast(Dict[str, Dict[Any, Any]], self.tool_registry.read_metadata_cache)
         return {}
 
     # ==================== 子代理机制 ====================
@@ -869,7 +875,7 @@ class Agent(ABC):
         # 1. 保存当前状态
         original_history = self.history_manager.get_history().copy()
         original_tools = None
-        original_max_steps = None
+        original_max_steps: Optional[int] = None
 
         # 2. 创建隔离的新历史
         self.history_manager.clear()
@@ -880,8 +886,8 @@ class Agent(ABC):
 
         # 4. 覆盖最大步数（如果提供）
         if max_steps_override is not None and hasattr(self, "max_steps"):
-            original_max_steps = self.max_steps
-            self.max_steps = max_steps_override
+            original_max_steps = cast(int, getattr(self, "max_steps"))
+            setattr(self, "max_steps", max_steps_override)
 
         # 记录开始时间
         start_time = time.time()
@@ -922,7 +928,7 @@ class Agent(ABC):
                 self._restore_tools(original_tools)
 
             if original_max_steps is not None:
-                self.max_steps = original_max_steps
+                setattr(self, "max_steps", original_max_steps)
 
         # 9. 返回结果
         if return_summary:
@@ -943,7 +949,7 @@ class Agent(ABC):
             return []
 
         # 保存原始工具列表
-        original_tools = self.tool_registry.list_tools()
+        original_tools = cast(List[str], self.tool_registry.list_tools())
 
         # 获取过滤后的工具列表
         filtered_tools = tool_filter.filter(original_tools)
@@ -951,19 +957,22 @@ class Agent(ABC):
         # 临时移除不允许的工具
         for tool_name in original_tools:
             if tool_name not in filtered_tools:
-                self.tool_registry._temp_disabled_tools = getattr(
-                    self.tool_registry, "_temp_disabled_tools", {}
+                if not hasattr(self.tool_registry, "_temp_disabled_tools"):
+                    setattr(self.tool_registry, "_temp_disabled_tools", {})
+                disabled_tools = cast(
+                    Dict[str, Any],
+                    getattr(self.tool_registry, "_temp_disabled_tools"),
                 )
                 tool = self.tool_registry.get_tool(tool_name)
                 if tool:
-                    self.tool_registry._temp_disabled_tools[tool_name] = tool
+                    disabled_tools[tool_name] = tool
                     # 从注册表中临时移除
                     if tool_name in self.tool_registry._tools:
                         del self.tool_registry._tools[tool_name]
 
         return original_tools
 
-    def _restore_tools(self, original_tools: List[str]):
+    def _restore_tools(self, original_tools: List[str]) -> None:
         """恢复原始工具列表
 
         Args:
@@ -974,11 +983,14 @@ class Agent(ABC):
 
         # 恢复被禁用的工具
         if hasattr(self.tool_registry, "_temp_disabled_tools"):
-            for tool_name, tool in self.tool_registry._temp_disabled_tools.items():
+            disabled_tools = cast(
+                Dict[str, Any], self.tool_registry._temp_disabled_tools
+            )
+            for tool_name, tool in disabled_tools.items():
                 self.tool_registry._tools[tool_name] = tool
 
             # 清空临时禁用列表
-            self.tool_registry._temp_disabled_tools = {}
+            setattr(self.tool_registry, "_temp_disabled_tools", {})
 
     def _get_subagent_metadata(
         self, duration: float, error: Optional[str]
@@ -1079,53 +1091,14 @@ class Agent(ABC):
 
         return "\n".join(summary_parts)
 
-    def _register_task_tool(self):
-        """注册 TaskTool（子代理工具）
-
-        自动注册逻辑，在 __init__ 中调用（如果启用）
-        """
-        from ..agents.factory import default_subagent_factory
-        from ..tools.builtin.task_tool import TaskTool
-
-        # 创建 Agent 工厂函数
-        def agent_factory(agent_type: str) -> Agent:
-            """为 TaskTool 创建子代理实例"""
-            # 决定使用哪个 LLM
-            if self.config.subagent_use_light_llm:
-                # 使用轻量模型
-                from ..core.llm import ClearAgentLLM
-
-                light_llm = ClearAgentLLM(
-                    provider=self.config.subagent_light_llm_provider,
-                    model=self.config.subagent_light_llm_model,
-                )
-                llm = light_llm
-            else:
-                # 使用主模型
-                llm = self.llm
-
-            # 使用默认工厂创建子代理
-            return default_subagent_factory(
-                agent_type=agent_type,
-                llm=llm,
-                tool_registry=self.tool_registry,
-                config=self.config,
-            )
-
-        # 创建并注册 TaskTool
-        task_tool = TaskTool(
-            agent_factory=agent_factory,
-            tool_registry=self.tool_registry,
-            config=self.config,
-        )
-
-        self.tool_registry.register_tool(task_tool)
-
-    def _register_task_tool(self):
+    def _register_task_tool(self) -> None:
         """注册 TaskTool（子代理工具）
 
         自动注册逻辑，支持用户自定义工厂函数。
         """
+        if not self.tool_registry:
+            return
+
         from ..tools.builtin.task_tool import TaskTool
         from ..agents.factory import default_subagent_factory
 
@@ -1141,11 +1114,14 @@ class Agent(ABC):
                 light_llm = self.llm
 
             # 使用默认工厂创建子代理
-            return default_subagent_factory(
-                agent_type=agent_type,
-                llm=light_llm,
-                tool_registry=self.tool_registry,
-                config=self.config,
+            return cast(
+                Agent,
+                default_subagent_factory(
+                    agent_type=agent_type,
+                    llm=light_llm,
+                    tool_registry=self.tool_registry,
+                    config=self.config,
+                ),
             )
 
         # 创建并注册 TaskTool
@@ -1157,11 +1133,14 @@ class Agent(ABC):
 
         self.tool_registry.register_tool(task_tool)
 
-    def _register_todowrite_tool(self):
+    def _register_todowrite_tool(self) -> None:
         """注册 TodoWriteTool（进度管理工具）
 
         自动注册逻辑，在 __init__ 中调用（如果启用）
         """
+        if not self.tool_registry:
+            return
+
         from ..tools.builtin.todowrite_tool import TodoWriteTool
 
         # 创建并注册 TodoWriteTool
@@ -1172,11 +1151,14 @@ class Agent(ABC):
 
         self.tool_registry.register_tool(todo_tool)
 
-    def _register_devlog_tool(self):
+    def _register_devlog_tool(self) -> None:
         """注册 DevLogTool（开发日志工具）
 
         自动注册逻辑，在 __init__ 中调用（如果启用）
         """
+        if not self.tool_registry:
+            return
+
         from ..tools.builtin.devlog_tool import DevLogTool
 
         # 获取 session_id（如果有 trace_logger 则使用其 session_id）

@@ -14,8 +14,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -26,6 +28,17 @@ from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Iterator, List, Optional
+
+
+_SAFE_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+def _safe_path_segment(segment: str) -> str:
+    """Return a single filesystem-safe path segment for external checkpoint IDs."""
+    if _SAFE_PATH_SEGMENT_RE.fullmatch(segment) and not segment.startswith("b64_"):
+        return segment
+    encoded = base64.urlsafe_b64encode(segment.encode("utf-8")).decode("ascii")
+    return "b64_" + encoded.rstrip("=")
 
 
 def _uuid7() -> str:
@@ -235,21 +248,27 @@ class JsonFileCheckpointer(BaseCheckpointer):
         base_dir: str = "memory/checkpoints",
         legacy_session_dir: Optional[str] = "memory/sessions",
     ) -> None:
-        self.base_dir = Path(base_dir)
+        self.base_dir = Path(base_dir).resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.legacy_session_dir = (
-            Path(legacy_session_dir) if legacy_session_dir else None
+            Path(legacy_session_dir).resolve() if legacy_session_dir else None
         )
         self._lock = Lock()
 
+    def _thread_dir_path(self, thread_id: str) -> Path:
+        return self.base_dir / _safe_path_segment(thread_id)
+
+    def _checkpoint_path(self, thread_dir: Path, checkpoint_id: str) -> Path:
+        return thread_dir / f"{_safe_path_segment(checkpoint_id)}.json"
+
     def _thread_dir(self, thread_id: str) -> Path:
-        d = self.base_dir / thread_id
+        d = self._thread_dir_path(thread_id)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
     def put(self, ckpt: Checkpoint) -> None:
         td = self._thread_dir(ckpt.thread_id)
-        filepath = td / f"{ckpt.id}.json"
+        filepath = self._checkpoint_path(td, ckpt.id)
         tmp_path = filepath.with_suffix(".json.tmp")
 
         # 原子写入正文
@@ -275,13 +294,13 @@ class JsonFileCheckpointer(BaseCheckpointer):
     def get_tuple(
         self, thread_id: str, checkpoint_id: Optional[str] = None
     ) -> Optional[Checkpoint]:
-        td = self.base_dir / thread_id
+        td = self._thread_dir_path(thread_id)
         if not td.exists():
             # 尝试从 legacy session 目录读取
             return self._load_legacy(thread_id, checkpoint_id)
 
         if checkpoint_id is not None:
-            filepath = td / f"{checkpoint_id}.json"
+            filepath = self._checkpoint_path(td, checkpoint_id)
             if not filepath.exists():
                 return None
             return self._read_ckpt(filepath)
@@ -290,7 +309,7 @@ class JsonFileCheckpointer(BaseCheckpointer):
         latest_id = self._latest_id_from_index(td)
         if latest_id is None:
             return None
-        filepath = td / f"{latest_id}.json"
+        filepath = self._checkpoint_path(td, latest_id)
         return self._read_ckpt(filepath) if filepath.exists() else None
 
     def list(
@@ -299,7 +318,7 @@ class JsonFileCheckpointer(BaseCheckpointer):
         before: Optional[str] = None,
         limit: int = 50,
     ) -> List[Checkpoint]:
-        td = self.base_dir / thread_id
+        td = self._thread_dir_path(thread_id)
         if not td.exists():
             return []
 
@@ -334,7 +353,7 @@ class JsonFileCheckpointer(BaseCheckpointer):
 
         results: List[Checkpoint] = []
         for e in entries[:limit]:
-            filepath = td / f"{e['id']}.json"
+            filepath = self._checkpoint_path(td, e["id"])
             if filepath.exists():
                 ckpt = self._read_ckpt(filepath)
                 if ckpt:
@@ -364,7 +383,13 @@ class JsonFileCheckpointer(BaseCheckpointer):
         if not last_line:
             return None
         try:
-            return json.loads(last_line)["id"]
+            data = json.loads(last_line)
+            if not isinstance(data, dict):
+                return None
+            checkpoint_id = data.get("id")
+            if not isinstance(checkpoint_id, str):
+                return None
+            return checkpoint_id
         except (json.JSONDecodeError, KeyError):
             return None
 
@@ -377,6 +402,8 @@ class JsonFileCheckpointer(BaseCheckpointer):
         转换为单 checkpoint thread 返回。
         """
         if self.legacy_session_dir is None or not self.legacy_session_dir.exists():
+            return None
+        if not _SAFE_PATH_SEGMENT_RE.fullmatch(thread_id):
             return None
 
         candidates = [

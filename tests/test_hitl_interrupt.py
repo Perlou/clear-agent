@@ -6,10 +6,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict, List, TypedDict
 
 import pytest
 
+from clear_agent.core.config import Config
 from clear_agent.core.checkpoint import (
     InMemoryCheckpointer,
     JsonFileCheckpointer,
@@ -24,6 +26,7 @@ from clear_agent.core.graph import (
 )
 from clear_agent.hitl import (
     GraphPaused,
+    InterruptExpiredError,
     approval,
     edit_state,
     interrupt,
@@ -98,6 +101,31 @@ def test_resume_with_value_continues_execution():
 
     assert final["decision"] == "approve"
     assert "got:approve" in final["log"]
+
+
+def test_resume_expired_interrupt_raises():
+    """interrupt checkpoint 超过 TTL 后不应继续 resume。"""
+
+    def n1(state):
+        decision = interrupt({"type": "approval", "prompt": "?"})
+        return {"log": f"got:{decision}", "decision": decision}
+
+    g = StateGraph(S)
+    g.add_node("n1", n1)
+    g.add_edge(START, "n1")
+    g.add_edge("n1", END)
+    ck = InMemoryCheckpointer()
+    compiled = g.compile(checkpointer=ck)
+
+    with pytest.raises(GraphPaused):
+        compiled.invoke({"log": []}, config=RunConfig(thread_id="t-expired"))
+
+    ckpt = ck.list("t-expired")[0]
+    ttl = Config().hitl_interrupt_ttl_seconds
+    ckpt.created_at = datetime.now() - timedelta(seconds=ttl + 1)
+
+    with pytest.raises(InterruptExpiredError):
+        compiled.resume(thread_id="t-expired", value="approve")
 
 
 # ==================== Test 3: 进程重启后 resume ====================

@@ -8,7 +8,7 @@
 """
 
 import tiktoken
-from typing import List, Dict, Optional
+from typing import Any, List, Dict
 from ..core.message import Message
 
 
@@ -36,7 +36,7 @@ class TokenCounter:
     ```
     """
 
-    def __init__(self, model: str = "gpt-4"):
+    def __init__(self, model: str = "gpt-4") -> None:
         """初始化 Token 计数器
 
         Args:
@@ -46,7 +46,7 @@ class TokenCounter:
         self._encoding = self._get_encoding()
         self._cache: Dict[str, int] = {}  # 消息内容 -> Token 数
 
-    def _get_encoding(self):
+    def _get_encoding(self) -> Any:
         """获取 tiktoken 编码器
 
         Returns:
@@ -136,7 +136,7 @@ class TokenCounter:
             # 降级方案：粗略估算（1 token ≈ 4 字符）
             return len(text) // 4
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """清空缓存"""
         self._cache.clear()
 

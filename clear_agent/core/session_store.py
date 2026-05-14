@@ -11,7 +11,7 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, cast
 from datetime import datetime
 from hashlib import sha256
 
@@ -46,7 +46,7 @@ class SessionStore:
     ```
     """
 
-    def __init__(self, session_dir: str = "memory/sessions"):
+    def __init__(self, session_dir: str = "memory/sessions") -> None:
         """初始化会话存储器
 
         Args:
@@ -72,7 +72,7 @@ class SessionStore:
         agent_config: Dict[str, Any],
         history: List[Any],
         tool_schema_hash: str,
-        read_cache: Dict[str, Dict],
+        read_cache: Dict[str, Dict[str, Any]],
         metadata: Dict[str, Any],
         session_name: Optional[str] = None,
     ) -> str:
@@ -140,7 +140,7 @@ class SessionStore:
         with open(filepath, "r", encoding="utf-8") as f:
             session_data = json.load(f)
 
-        return session_data
+        return cast(Dict[str, Any], session_data)
 
     def list_sessions(self) -> List[Dict[str, Any]]:
         """列出所有会话
@@ -148,7 +148,7 @@ class SessionStore:
         Returns:
             会话信息列表，按保存时间倒序排列
         """
-        sessions = []
+        sessions: List[Dict[str, Any]] = []
 
         for filepath in self.session_dir.glob("*.json"):
             try:
@@ -200,7 +200,7 @@ class SessionStore:
         Returns:
             检查结果字典，包含 warnings 列表
         """
-        warnings = []
+        warnings: List[str] = []
 
         # 检查 LLM 提供商
         if saved_config.get("llm_provider") != current_config.get("llm_provider"):

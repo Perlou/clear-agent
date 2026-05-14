@@ -2,7 +2,17 @@
 
 import os
 import asyncio
-from typing import Optional, Iterator, List, Dict, Union, Any, AsyncIterator
+from typing import (
+    Optional,
+    Iterator,
+    List,
+    Dict,
+    Union,
+    Any,
+    AsyncIterator,
+    Awaitable,
+    cast,
+)
 
 from .exceptions import ClearAgentException
 from .llm_response import LLMResponse, StreamStats, LLMToolResponse
@@ -33,8 +43,8 @@ class ClearAgentLLM:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: Optional[int] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         初始化LLM客户端
 
@@ -118,7 +128,9 @@ class ClearAgentLLM:
             print(f"❌ 调用LLM API时发生错误: {e}")
             raise
 
-    def invoke(self, messages: List[Dict[str, str]], **kwargs) -> LLMResponse:
+    def invoke(
+        self, messages: List[Dict[str, str]], **kwargs: Any
+    ) -> LLMResponse:
         """
         非流式调用LLM，返回完整响应对象。
 
@@ -146,7 +158,9 @@ class ClearAgentLLM:
 
         return self._adapter.invoke(messages, **call_kwargs)
 
-    def stream_invoke(self, messages: List[Dict[str, str]], **kwargs) -> Iterator[str]:
+    def stream_invoke(
+        self, messages: List[Dict[str, str]], **kwargs: Any
+    ) -> Iterator[str]:
         """
         流式调用LLM的别名方法，与think方法功能相同。
         保持向后兼容性。
@@ -161,7 +175,7 @@ class ClearAgentLLM:
         Note:
             流式调用结束后，可通过 llm.last_call_stats 获取统计信息
         """
-        temperature = kwargs.pop("temperature", None)
+        temperature = kwargs.pop("temperature", self.temperature)
 
         call_kwargs = {}
         if self.max_tokens:
@@ -178,10 +192,10 @@ class ClearAgentLLM:
 
     def invoke_with_tools(
         self,
-        messages: List[Dict],
-        tools: List[Dict],
-        tool_choice: Union[str, Dict] = "auto",
-        **kwargs,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        tool_choice: Union[str, Dict[str, Any]] = "auto",
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """
         调用 LLM 并支持工具调用（Function Calling）
@@ -216,7 +230,9 @@ class ClearAgentLLM:
 
     # ==================== 异步方法 ====================
 
-    async def ainvoke(self, messages: List[Dict[str, str]], **kwargs) -> LLMResponse:
+    async def ainvoke(
+        self, messages: List[Dict[str, str]], **kwargs: Any
+    ) -> LLMResponse:
         """
         异步非流式调用 LLM
 
@@ -243,7 +259,8 @@ class ClearAgentLLM:
         # 优先 adapter 的真异步路径
         async_fn = getattr(self._adapter, "ainvoke_async", None)
         if callable(async_fn):
-            return await async_fn(messages, **call_kwargs)
+            result = async_fn(messages, **call_kwargs)
+            return await cast(Awaitable[LLMResponse], result)
 
         # 回退：线程池包装同步 invoke
         loop = asyncio.get_event_loop()
@@ -252,7 +269,7 @@ class ClearAgentLLM:
         )
 
     async def astream_invoke(
-        self, messages: List[Dict[str, str]], **kwargs
+        self, messages: List[Dict[str, str]], **kwargs: Any
     ) -> AsyncIterator[str]:
         """
         真正的异步流式调用 LLM（使用 adapter 的异步实现）
@@ -277,10 +294,10 @@ class ClearAgentLLM:
 
     async def ainvoke_with_tools(
         self,
-        messages: List[Dict],
-        tools: List[Dict],
-        tool_choice: Union[str, Dict] = "auto",
-        **kwargs,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        tool_choice: Union[str, Dict[str, Any]] = "auto",
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """
         异步调用 LLM 并支持工具调用（Function Calling）
@@ -307,12 +324,13 @@ class ClearAgentLLM:
         # 优先 adapter 真异步路径
         async_fn = getattr(self._adapter, "ainvoke_with_tools_async", None)
         if callable(async_fn):
-            return await async_fn(messages, tools, **call_kwargs)
+            result = async_fn(messages, tools, **call_kwargs)
+            return await cast(Awaitable[LLMToolResponse], result)
 
         # 回退：线程池包装
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None, lambda: self.invoke_with_tools(messages, tools, tool_choice, **kwargs)
+            None, lambda: self.invoke_with_tools(messages, tools, **call_kwargs)
         )
 
     # ==================== 多轮对话 helper ====================

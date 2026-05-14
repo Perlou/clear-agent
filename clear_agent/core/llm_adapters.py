@@ -4,7 +4,7 @@ import time
 import asyncio
 import json
 from abc import ABC, abstractmethod
-from typing import Optional, Iterator, List, Dict, Any, Union, AsyncIterator
+from typing import Optional, Iterator, List, Dict, Any, Union, AsyncIterator, cast
 
 from .llm_response import LLMResponse, StreamStats, LLMToolResponse, ToolCall
 from .exceptions import ClearAgentException
@@ -13,13 +13,16 @@ from .exceptions import ClearAgentException
 class BaseLLMAdapter(ABC):
     """LLM适配器基类"""
 
-    def __init__(self, api_key: str, base_url: Optional[str], timeout: int, model: str):
+    def __init__(
+        self, api_key: str, base_url: Optional[str], timeout: int, model: str
+    ) -> None:
         self.api_key = api_key
         self.base_url = base_url
         self.timeout = timeout
         self.model = model
-        self._client = None
-        self._async_client = None
+        self._client: Any = None
+        self._async_client: Any = None
+        self.last_stats: Optional[StreamStats] = None
 
     @abstractmethod
     def create_client(self) -> Any:
@@ -31,26 +34,30 @@ class BaseLLMAdapter(ABC):
         return None
 
     @abstractmethod
-    def invoke(self, messages: List[Dict], **kwargs) -> LLMResponse:
+    def invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
         """非流式调用"""
         pass
 
     @abstractmethod
-    def stream_invoke(self, messages: List[Dict], **kwargs) -> Iterator[str]:
+    def stream_invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> Iterator[str]:
         """流式调用，返回生成器"""
         pass
 
     async def astream_invoke(
-        self, messages: List[Dict], **kwargs
+        self, messages: List[Dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[str]:
         """异步流式调用（子类可选实现真正的异步）
 
         默认实现：使用队列 + 线程池包装同步流式方法
         """
-        queue = asyncio.Queue()
+        queue: asyncio.Queue[Union[str, Exception, None]] = asyncio.Queue()
         loop = asyncio.get_event_loop()
 
-        def _stream_to_queue():
+        def _stream_to_queue() -> None:
             try:
                 for chunk in self.stream_invoke(messages, **kwargs):
                     asyncio.run_coroutine_threadsafe(queue.put(chunk), loop)
@@ -73,7 +80,10 @@ class BaseLLMAdapter(ABC):
 
     @abstractmethod
     def invoke_with_tools(
-        self, messages: List[Dict], tools: List[Dict], **kwargs
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """工具调用（Function Calling）"""
         pass
@@ -155,10 +165,10 @@ class BaseLLMAdapter(ABC):
         # 优先从 message 取
         rc = getattr(message, "reasoning_content", None)
         if rc:
-            return rc
+            return str(rc)
         # 兜底从 choice 取
         rc = getattr(choice_or_message, "reasoning_content", None)
-        return rc or None
+        return cast(Optional[str], rc or None)
 
 
 class OpenAIAdapter(BaseLLMAdapter):
@@ -199,7 +209,9 @@ class OpenAIAdapter(BaseLLMAdapter):
             api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
         )
 
-    def invoke(self, messages: List[Dict], **kwargs) -> LLMResponse:
+    def invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
         """非流式调用"""
         if not self._client:
             self._client = self.create_client()
@@ -237,7 +249,9 @@ class OpenAIAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"OpenAI API调用失败: {str(e)}")
 
-    def stream_invoke(self, messages: List[Dict], **kwargs) -> Iterator[str]:
+    def stream_invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> Iterator[str]:
         """流式调用"""
         if not self._client:
             self._client = self.create_client()
@@ -289,7 +303,7 @@ class OpenAIAdapter(BaseLLMAdapter):
             raise ClearAgentException(f"OpenAI API流式调用失败: {str(e)}")
 
     async def astream_invoke(
-        self, messages: List[Dict], **kwargs
+        self, messages: List[Dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[str]:
         """真正的异步流式调用（使用 OpenAI 原生异步客户端）"""
         if not self._async_client:
@@ -343,10 +357,10 @@ class OpenAIAdapter(BaseLLMAdapter):
 
     def invoke_with_tools(
         self,
-        messages: List[Dict],
-        tools: List[Dict],
-        tool_choice: Union[str, Dict] = "auto",
-        **kwargs,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        tool_choice: Union[str, Dict[str, Any]] = "auto",
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """工具调用（Function Calling）"""
         if not self._client:
@@ -399,7 +413,9 @@ class OpenAIAdapter(BaseLLMAdapter):
 
     # ==================== 真异步 ====================
 
-    async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
+    async def ainvoke_async(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
         """真异步非流式（用 ``AsyncOpenAI``，不走线程池）"""
         if not self._async_client:
             self._async_client = self.create_async_client()
@@ -432,10 +448,10 @@ class OpenAIAdapter(BaseLLMAdapter):
 
     async def ainvoke_with_tools_async(
         self,
-        messages: List[Dict],
-        tools: List[Dict],
-        tool_choice: Union[str, Dict] = "auto",
-        **kwargs,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        tool_choice: Union[str, Dict[str, Any]] = "auto",
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """真异步 Function Calling"""
         if not self._async_client:
@@ -500,22 +516,106 @@ class AnthropicAdapter(BaseLLMAdapter):
             api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
         )
 
+    @staticmethod
+    def _convert_tool_schema(tool: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert OpenAI function schemas to Anthropic tool schemas."""
+        if tool.get("type") == "function" and isinstance(tool.get("function"), dict):
+            fn = tool["function"]
+            return {
+                "name": fn["name"],
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters")
+                or {"type": "object", "properties": {}},
+            }
+
+        converted = dict(tool)
+        if "input_schema" not in converted:
+            converted["input_schema"] = converted.pop(
+                "parameters", {"type": "object", "properties": {}}
+            )
+        converted.pop("type", None)
+        return converted
+
+    @classmethod
+    def _convert_tools(
+        cls, tools: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        return [cls._convert_tool_schema(t) for t in tools]
+
+    @staticmethod
+    def _parse_tool_arguments(arguments: Any) -> Dict[str, Any]:
+        if isinstance(arguments, dict):
+            return arguments
+        if isinstance(arguments, str) and arguments:
+            try:
+                parsed = json.loads(arguments)
+                return parsed if isinstance(parsed, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+    @classmethod
+    def _convert_assistant_tool_message(cls, msg: Dict[str, Any]) -> Dict[str, Any]:
+        content_blocks: List[Dict[str, Any]] = []
+        content = msg.get("content")
+        if isinstance(content, list):
+            content_blocks.extend(content)
+        elif content:
+            content_blocks.append({"type": "text", "text": str(content)})
+
+        for call in msg.get("tool_calls") or []:
+            fn = call.get("function") or {}
+            name = fn.get("name") or call.get("name")
+            arguments = fn.get("arguments", call.get("arguments"))
+            content_blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": call.get("id"),
+                    "name": name,
+                    "input": cls._parse_tool_arguments(arguments),
+                }
+            )
+
+        return {"role": "assistant", "content": content_blocks}
+
+    @staticmethod
+    def _convert_tool_result_message(msg: Dict[str, Any]) -> Dict[str, Any]:
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False)
+        return {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id") or msg.get("id"),
+                    "content": content,
+                }
+            ],
+        }
+
     def _convert_messages(
-        self, messages: List[Dict]
-    ) -> tuple[Optional[str], List[Dict]]:
+        self, messages: List[Dict[str, Any]]
+    ) -> tuple[Optional[str], List[Dict[str, Any]]]:
         """转换消息格式，提取system消息"""
-        system_content = None
-        converted_messages = []
+        system_content: Optional[str] = None
+        converted_messages: List[Dict[str, Any]] = []
 
         for msg in messages:
             if msg["role"] == "system":
-                system_content = msg["content"]
+                system_content = str(msg["content"])
+            elif msg["role"] == "tool":
+                converted_messages.append(self._convert_tool_result_message(msg))
+            elif msg["role"] == "assistant" and msg.get("tool_calls"):
+                converted_messages.append(self._convert_assistant_tool_message(msg))
             else:
                 converted_messages.append(msg)
 
         return system_content, converted_messages
 
-    def invoke(self, messages: List[Dict], **kwargs) -> LLMResponse:
+    def invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
         """非流式调用"""
         if not self._client:
             self._client = self.create_client()
@@ -560,7 +660,9 @@ class AnthropicAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"Anthropic API调用失败: {str(e)}")
 
-    def stream_invoke(self, messages: List[Dict], **kwargs) -> Iterator[str]:
+    def stream_invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> Iterator[str]:
         """流式调用"""
         if not self._client:
             self._client = self.create_client()
@@ -605,20 +707,25 @@ class AnthropicAdapter(BaseLLMAdapter):
             raise ClearAgentException(f"Anthropic API流式调用失败: {str(e)}")
 
     def invoke_with_tools(
-        self, messages: List[Dict], tools: List[Dict], **kwargs
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """工具调用（Anthropic格式）"""
         if not self._client:
             self._client = self.create_client()
 
+        kwargs.pop("tool_choice", None)
         system_content, converted_messages = self._convert_messages(messages)
+        converted_tools = self._convert_tools(tools)
 
         start_time = time.time()
         try:
             request_params = {
                 "model": self.model,
                 "messages": converted_messages,
-                "tools": tools,
+                "tools": converted_tools,
                 "max_tokens": kwargs.pop("max_tokens", 4096),
                 **kwargs,
             }
@@ -674,7 +781,9 @@ class AnthropicAdapter(BaseLLMAdapter):
             api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
         )
 
-    async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
+    async def ainvoke_async(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
         """真异步非流式调用 Anthropic"""
         if not self._async_client:
             self._async_client = self.create_async_client()
@@ -710,7 +819,10 @@ class AnthropicAdapter(BaseLLMAdapter):
             raise ClearAgentException(f"Anthropic 异步调用失败: {str(e)}")
 
     async def ainvoke_with_tools_async(
-        self, messages: List[Dict], tools: List[Dict], **kwargs
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """真异步 Anthropic 工具调用"""
         if not self._async_client:
@@ -718,12 +830,13 @@ class AnthropicAdapter(BaseLLMAdapter):
         # 移除 OpenAI 风格的 tool_choice（Anthropic 用 native tool_choice 但参数名不同）
         kwargs.pop("tool_choice", None)
         system_content, converted_messages = self._convert_messages(messages)
+        converted_tools = self._convert_tools(tools)
         start_time = time.time()
         try:
             request_params = {
                 "model": self.model,
                 "messages": converted_messages,
-                "tools": tools,
+                "tools": converted_tools,
                 "max_tokens": kwargs.pop("max_tokens", 4096),
                 **kwargs,
             }
@@ -779,15 +892,15 @@ class GeminiAdapter(BaseLLMAdapter):
         return client
 
     def _convert_messages(
-        self, messages: List[Dict]
-    ) -> tuple[Optional[str], List[Dict]]:
+        self, messages: List[Dict[str, Any]]
+    ) -> tuple[Optional[str], List[Dict[str, Any]]]:
         """转换消息格式"""
-        system_instruction = None
-        converted_messages = []
+        system_instruction: Optional[str] = None
+        converted_messages: List[Dict[str, Any]] = []
 
         for msg in messages:
             if msg["role"] == "system":
-                system_instruction = msg["content"]
+                system_instruction = str(msg["content"])
             else:
                 # Gemini使用 "user" 和 "model" 作为角色
                 role = "model" if msg["role"] == "assistant" else "user"
@@ -797,7 +910,9 @@ class GeminiAdapter(BaseLLMAdapter):
 
         return system_instruction, converted_messages
 
-    def invoke(self, messages: List[Dict], **kwargs) -> LLMResponse:
+    def invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
         """非流式调用"""
         if not self._client:
             self._client = self.create_client()
@@ -809,7 +924,7 @@ class GeminiAdapter(BaseLLMAdapter):
 
         try:
             # 创建生成配置
-            config_params = {}
+            config_params: Dict[str, Any] = {}
             if "temperature" in kwargs:
                 config_params["temperature"] = kwargs.pop("temperature")
             if "max_tokens" in kwargs:
@@ -820,7 +935,7 @@ class GeminiAdapter(BaseLLMAdapter):
             response = self._client.models.generate_content(
                 model=self.model,
                 contents=converted_messages,
-                config=genai_types.GenerateContentConfig(**config_params)
+                config=genai_types.GenerateContentConfig(**cast(Any, config_params))
                 if config_params
                 else None,
             )
@@ -846,7 +961,9 @@ class GeminiAdapter(BaseLLMAdapter):
         except Exception as e:
             raise ClearAgentException(f"Gemini API调用失败: {str(e)}")
 
-    def stream_invoke(self, messages: List[Dict], **kwargs) -> Iterator[str]:
+    def stream_invoke(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> Iterator[str]:
         """流式调用"""
         if not self._client:
             self._client = self.create_client()
@@ -858,7 +975,7 @@ class GeminiAdapter(BaseLLMAdapter):
 
         try:
             # 创建生成配置
-            config_params = {}
+            config_params: Dict[str, Any] = {}
             if "temperature" in kwargs:
                 config_params["temperature"] = kwargs.pop("temperature")
             if "max_tokens" in kwargs:
@@ -871,7 +988,7 @@ class GeminiAdapter(BaseLLMAdapter):
             response = self._client.models.generate_content_stream(
                 model=self.model,
                 contents=converted_messages,
-                config=genai_types.GenerateContentConfig(**config_params)
+                config=genai_types.GenerateContentConfig(**cast(Any, config_params))
                 if config_params
                 else None,
             )
@@ -899,7 +1016,10 @@ class GeminiAdapter(BaseLLMAdapter):
             raise ClearAgentException(f"Gemini API流式调用失败: {str(e)}")
 
     def invoke_with_tools(
-        self, messages: List[Dict], tools: List[Dict], **kwargs
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """工具调用（Gemini格式）"""
         if not self._client:
@@ -912,7 +1032,7 @@ class GeminiAdapter(BaseLLMAdapter):
         start_time = time.time()
         try:
             # 转换工具格式为Gemini格式
-            gemini_tools = []
+            gemini_tools: List[Any] = []
             for tool in tools:
                 if tool.get("type") == "function":
                     func = tool["function"]
@@ -924,7 +1044,7 @@ class GeminiAdapter(BaseLLMAdapter):
                         )
                     )
 
-            config_params = {}
+            config_params: Dict[str, Any] = {}
             if gemini_tools:
                 config_params["tools"] = [
                     genai_types.Tool(function_declarations=gemini_tools)
@@ -935,7 +1055,7 @@ class GeminiAdapter(BaseLLMAdapter):
             response = self._client.models.generate_content(
                 model=self.model,
                 contents=converted_messages,
-                config=genai_types.GenerateContentConfig(**config_params)
+                config=genai_types.GenerateContentConfig(**cast(Any, config_params))
                 if config_params
                 else None,
             )
@@ -978,7 +1098,9 @@ class GeminiAdapter(BaseLLMAdapter):
 
     # ==================== 真异步 ====================
 
-    async def ainvoke_async(self, messages: List[Dict], **kwargs) -> LLMResponse:
+    async def ainvoke_async(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
         """异步调用 Gemini
 
         Gemini SDK 的 async API（``client.aio.models.generate_content``）
@@ -988,7 +1110,10 @@ class GeminiAdapter(BaseLLMAdapter):
         return await asyncio.to_thread(self.invoke, messages, **kwargs)
 
     async def ainvoke_with_tools_async(
-        self, messages: List[Dict], tools: List[Dict], **kwargs
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        **kwargs: Any,
     ) -> LLMToolResponse:
         """异步 Gemini 工具调用（同上，to_thread 包装）"""
         kwargs.pop("tool_choice", None)  # Gemini 不用 OpenAI 风格的 tool_choice

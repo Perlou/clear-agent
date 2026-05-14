@@ -19,7 +19,7 @@ pip install clear-agent[retrieval-qdrant]   # 仅 qdrant-client
 - ``QDRANT_SEARCH_EF`` (默认 128)
 - ``QDRANT_SEARCH_EXACT`` (``"1"`` 启用精确搜索；默认 0)
 
-构造连接的便捷方式见 ``QdrantConnectionManager.get_instance()``（同 (url, collection_name)
+构造连接的便捷方式见 ``QdrantConnectionManager.get_instance()``（同连接和向量配置
 共享单例，避免重复建立连接）。
 """
 
@@ -30,7 +30,7 @@ import os
 import threading
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from ...core.exceptions import RetrievalException
 
@@ -67,7 +67,7 @@ DEFAULT_COLLECTION = "clear_agent_vectors"
 
 
 class QdrantConnectionManager:
-    """Qdrant 连接管理器（同 ``(url, collection_name)`` 共享单例）
+    """Qdrant 连接管理器（同连接和向量配置共享单例）
 
     用于避免在同一进程内对相同集合反复建立连接。
     """
@@ -87,7 +87,13 @@ class QdrantConnectionManager:
         **kwargs: Any,
     ) -> "QdrantVectorStore":
         """获取或创建 ``QdrantVectorStore`` 实例（同 key 复用）"""
-        key = (url or "local", collection_name)
+        key = (
+            url or "local",
+            api_key or "",
+            collection_name,
+            int(vector_size),
+            distance.lower(),
+        )
         if key not in cls._instances:
             with cls._lock:
                 if key not in cls._instances:
@@ -162,7 +168,7 @@ class QdrantVectorStore:
         }
         self.distance = distance_map.get(distance.lower(), Distance.COSINE)
 
-        self.client: Optional[Any] = None
+        self.client: Any = None
         self._initialize_client()
 
     @staticmethod
@@ -221,6 +227,7 @@ class QdrantVectorStore:
                 logger.info(f"✅ 创建 Qdrant 集合: {self.collection_name}")
             else:
                 logger.info(f"✅ 使用现有 Qdrant 集合: {self.collection_name}")
+                self._validate_existing_collection()
                 try:
                     self.client.update_collection(
                         collection_name=self.collection_name,
@@ -235,6 +242,28 @@ class QdrantVectorStore:
         except Exception as e:
             logger.error(f"❌ 集合初始化失败: {e}")
             raise RetrievalException(f"Qdrant 集合初始化失败: {e}") from e
+
+    def _validate_existing_collection(self) -> None:
+        """Validate existing collection vector config when the server exposes it."""
+        try:
+            info = self.client.get_collection(collection_name=self.collection_name)
+        except Exception as e:
+            logger.debug(f"跳过校验现有集合配置: {e}")
+            return
+
+        vectors = getattr(getattr(getattr(info, "config", None), "params", None), "vectors", None)
+        if isinstance(vectors, dict):
+            vectors = vectors.get("") or vectors.get("default") or next(
+                iter(vectors.values()), None
+            )
+
+        existing_size = getattr(vectors, "size", None)
+        if isinstance(existing_size, int) and existing_size != self.vector_size:
+            raise RetrievalException(
+                "现有 Qdrant 集合向量维度不匹配: "
+                f"collection={self.collection_name}, "
+                f"existing={existing_size}, requested={self.vector_size}"
+            )
 
     def _ensure_payload_indexes(self) -> None:
         """为常用过滤字段创建 payload 索引（已存在则忽略）"""
@@ -377,8 +406,8 @@ class QdrantVectorStore:
 
             query_filter = None
             if where:
-                conditions = [
-                    FieldCondition(key=k, match=MatchValue(value=v))
+                conditions: List[Any] = [
+                    FieldCondition(key=k, match=MatchValue(value=cast(Any, v)))
                     for k, v in where.items()
                     if isinstance(v, (str, int, float, bool))
                 ]
@@ -452,8 +481,8 @@ class QdrantVectorStore:
         try:
             if not memory_ids:
                 return
-            conditions = [
-                FieldCondition(key="memory_id", match=MatchValue(value=mid))
+            conditions: List[Any] = [
+                FieldCondition(key="memory_id", match=MatchValue(value=cast(Any, mid)))
                 for mid in memory_ids
             ]
             query_filter = Filter(should=conditions)

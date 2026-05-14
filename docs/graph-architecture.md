@@ -56,6 +56,8 @@ def router(state):
 g.add_conditional_edges("step", router, {"loop": "step", "done": END})
 ```
 
+当前执行器是单后继模型：同一个 source 不能有多条静态边，`router` 也不能返回 `list[str]`，`mapping` 的值也不能是 `list[str]`。这些 fan-out 写法会在 compile 或运行时显式报错；需要并行分支时，先把并行逻辑封装在一个节点内，或等待后续 graph fan-out 支持。
+
 ## 4. Checkpointer + thread
 
 ```python
@@ -120,4 +122,4 @@ print(compiled.draw_mermaid())
 - **`reducer` 漏写** → 多次写入同一字段会被覆盖。给 list 字段加 `Annotated[list, add_messages]` 之类。
 - **回路无终止** → `compiled.invoke` 默认 `recursion_limit=25`；超出抛错。在 router 里给终止条件，或调高 limit。
 - **节点抛异常** → 默认中断 graph。需要"记录并继续"行为时，自己在节点里 try/except 把错误写入 state。
-- **`thread_id` 漏传** → checkpoint 不会写入。同 graph 不同 thread 互不影响。
+- **`thread_id` 漏传** → `RunConfig` 会自动生成一个 thread id 并写入 checkpoint；如果调用方后续需要 resume，应显式传入稳定的 `thread_id`。同 graph 不同 thread 互不影响。

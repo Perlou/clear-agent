@@ -1,6 +1,6 @@
 """工具注册表 - ClearAgent原生工具系统"""
 
-from typing import Optional, Any, Callable, Dict
+from typing import Optional, Any, Callable, Dict, cast
 import time
 from .base import Tool
 from .response import ToolResponse, ToolStatus
@@ -18,7 +18,7 @@ class ToolRegistry:
     2. 函数直接注册（简便）
     """
 
-    def __init__(self, circuit_breaker: Optional[CircuitBreaker] = None):
+    def __init__(self, circuit_breaker: Optional[CircuitBreaker] = None) -> None:
         self._tools: dict[str, Tool] = {}
         self._functions: dict[str, dict[str, Any]] = {}
 
@@ -28,7 +28,7 @@ class ToolRegistry:
         # 熔断器（默认启用）
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
 
-    def register_tool(self, tool: Tool, auto_expand: bool = True):
+    def register_tool(self, tool: Tool, auto_expand: bool = True) -> None:
         """
         注册Tool对象
 
@@ -59,10 +59,10 @@ class ToolRegistry:
 
     def register_function(
         self,
-        func: Callable,
+        func: Any,
         name: Optional[str] = None,
-        description: Optional[str] = None,
-    ):
+        description: Optional[Any] = None,
+    ) -> None:
         """
         直接注册函数作为工具（简便方式）
 
@@ -88,6 +88,7 @@ class ToolRegistry:
         if isinstance(func, str) and callable(description):
             # 旧方式：第一个参数是 name，第二个是 description，第三个是 func
             name, description, func = func, name, description
+        func = cast(Callable[..., Any], func)
 
         # 自动提取名称
         if name is None:
@@ -110,27 +111,34 @@ class ToolRegistry:
         self._functions[name] = {"description": description, "func": func}
         print(f"✅ 函数工具 '{name}' 已注册。")
 
-    def unregister(self, name: str):
+    def unregister(self, name: str) -> bool:
         """注销工具"""
         if name in self._tools:
             del self._tools[name]
             print(f"🗑️ 工具 '{name}' 已注销。")
+            return True
         elif name in self._functions:
             del self._functions[name]
             print(f"🗑️ 工具 '{name}' 已注销。")
+            return True
         else:
             print(f"⚠️ 工具 '{name}' 不存在。")
+            return False
+
+    def unregister_tool(self, name: str) -> bool:
+        """注销工具（兼容 Agent.remove_tool 使用的旧方法名）"""
+        return self.unregister(name)
 
     def get_tool(self, name: str) -> Optional[Tool]:
         """获取Tool对象"""
         return self._tools.get(name)
 
-    def get_function(self, name: str) -> Optional[Callable]:
+    def get_function(self, name: str) -> Optional[Callable[..., Any]]:
         """获取工具函数"""
         func_info = self._functions.get(name)
         return func_info["func"] if func_info else None
 
-    def execute_tool(self, name: str, input_text: str) -> ToolResponse:
+    def execute_tool(self, name: str, input_text: Any) -> ToolResponse:
         """
         执行工具，返回 ToolResponse 对象（带熔断器保护）
 
@@ -245,7 +253,7 @@ class ToolRegistry:
         """获取所有Tool对象"""
         return list(self._tools.values())
 
-    def clear(self):
+    def clear(self) -> None:
         """清空所有工具"""
         self._tools.clear()
         self._functions.clear()
@@ -253,7 +261,7 @@ class ToolRegistry:
 
     # ==================== 乐观锁机制支持 ====================
 
-    def cache_read_metadata(self, file_path: str, metadata: Dict[str, Any]):
+    def cache_read_metadata(self, file_path: str, metadata: Dict[str, Any]) -> None:
         """缓存 Read 工具获取的文件元数据
 
         Args:
@@ -275,7 +283,7 @@ class ToolRegistry:
         """
         return self.read_metadata_cache.get(file_path)
 
-    def clear_read_cache(self, file_path: Optional[str] = None):
+    def clear_read_cache(self, file_path: Optional[str] = None) -> None:
         """清空文件元数据缓存
 
         Args:

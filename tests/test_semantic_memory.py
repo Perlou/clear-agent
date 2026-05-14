@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -66,6 +66,7 @@ def test_relation_to_dict():
 def _fake_embedder(dim: int = 384):
     e = MagicMock()
     e.encode.side_effect = lambda text: [float(len(text))] * dim
+    e.dimension = dim
     return e
 
 
@@ -140,6 +141,53 @@ def test_semantic_add_writes_entities_to_metadata():
     assert "entities" in item.metadata
     assert "relations" in item.metadata
     assert len(item.metadata["entities"]) == 2
+
+
+def test_semantic_init_uses_supplied_embedder_dimension():
+    embedder = _fake_embedder(dim=12)
+    with patch("clear_agent.retrieval.embeddings.get_dimension", return_value=384):
+        with patch(
+            "clear_agent.retrieval.storage.qdrant_store.QdrantConnectionManager.get_instance"
+        ) as get_instance:
+            get_instance.return_value = _fake_store()
+
+            SemanticMemory(
+                config=MemoryConfig(),
+                embedding_model=embedder,
+                vector_store=None,
+                nlp=None,
+            )
+
+    assert get_instance.call_args.kwargs["vector_size"] == 12
+
+
+def test_semantic_update_upserts_vector_store():
+    embedder = _fake_embedder(dim=3)
+    store = _fake_store()
+    sm = _make_sm(embedder=embedder, store=store)
+    sm.add(_make_item("m1", content="alpha beta", importance=0.5))
+    store.add_vectors.reset_mock()
+
+    assert sm.update("m1", content="gamma delta", importance=0.9)
+
+    store.add_vectors.assert_called_once()
+    call = store.add_vectors.call_args.kwargs
+    assert call["ids"] == ["m1"]
+    assert call["vectors"] == [[11.0, 11.0, 11.0]]
+    assert call["metadata"][0]["content"] == "gamma delta"
+    assert call["metadata"][0]["importance"] == 0.9
+
+
+def test_remove_cleans_orphan_entities_and_relations():
+    sm = _make_sm()
+    sm.add(_make_item("m1", content="uniquealpha uniquebeta uniquegamma"))
+    assert sm.entities
+    assert sm.relations
+
+    assert sm.remove("m1")
+
+    assert sm.entities == {}
+    assert sm.relations == []
 
 
 def test_semantic_add_appends_to_semantic_memories():

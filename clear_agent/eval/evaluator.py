@@ -87,11 +87,11 @@ class ExactMatch(BaseEvaluator):
         self,
         case_sensitive: bool = False,
         normalize_whitespace: bool = True,
-    ):
+    ) -> None:
         self.case_sensitive = case_sensitive
         self.normalize_whitespace = normalize_whitespace
 
-    def evaluate(self, predicted, expected, example) -> EvalResult:
+    def evaluate(self, predicted: Any, expected: Any, example: "Example") -> EvalResult:
         p = _normalize(
             predicted,
             case_sensitive=self.case_sensitive,
@@ -121,11 +121,11 @@ class Contains(BaseEvaluator):
         self,
         case_sensitive: bool = False,
         normalize_whitespace: bool = True,
-    ):
+    ) -> None:
         self.case_sensitive = case_sensitive
         self.normalize_whitespace = normalize_whitespace
 
-    def evaluate(self, predicted, expected, example) -> EvalResult:
+    def evaluate(self, predicted: Any, expected: Any, example: "Example") -> EvalResult:
         p = _normalize(
             predicted,
             case_sensitive=self.case_sensitive,
@@ -175,7 +175,7 @@ class LLMAsJudge(BaseEvaluator):
         pass_threshold: float = 0.7,
         score_field: str = "score",
         reasoning_field: str = "reasoning",
-    ):
+    ) -> None:
         self.llm = llm
         self.rubric = rubric
         self.pass_threshold = pass_threshold
@@ -189,7 +189,7 @@ class LLMAsJudge(BaseEvaluator):
         # 复用 with_structured_output；method=auto
         self._structured = llm.with_structured_output(output_schema)
 
-    def evaluate(self, predicted, expected, example) -> EvalResult:
+    def evaluate(self, predicted: Any, expected: Any, example: "Example") -> EvalResult:
         prompt = (
             f"You are an evaluator. Score the predicted answer based on the rubric.\n\n"
             f"Rubric:\n{self.rubric}\n\n"
@@ -236,7 +236,7 @@ class Custom(BaseEvaluator):
         fn: Callable[[Any, Any, "Example"], Any],
         pass_threshold: float = 0.5,
         name: Optional[str] = None,
-    ):
+    ) -> None:
         self.fn = fn
         self.pass_threshold = pass_threshold
         self._name = name or getattr(fn, "__name__", "custom")
@@ -245,7 +245,7 @@ class Custom(BaseEvaluator):
     def name(self) -> str:
         return f"Custom({self._name})"
 
-    def evaluate(self, predicted, expected, example) -> EvalResult:
+    def evaluate(self, predicted: Any, expected: Any, example: "Example") -> EvalResult:
         out = self.fn(predicted, expected, example)
         if isinstance(out, EvalResult):
             return out

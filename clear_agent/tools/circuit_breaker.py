@@ -1,7 +1,7 @@
 """熔断器机制 - 防止工具连续失败导致的死循环"""
 
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from collections import defaultdict
 from .response import ToolResponse, ToolStatus
 
@@ -24,7 +24,7 @@ class CircuitBreaker:
         failure_threshold: int = 3,
         recovery_timeout: int = 300,
         enabled: bool = True,
-    ):
+    ) -> None:
         """
         初始化熔断器
 
@@ -70,7 +70,7 @@ class CircuitBreaker:
 
         return True
 
-    def record_result(self, tool_name: str, response: ToolResponse):
+    def record_result(self, tool_name: str, response: ToolResponse) -> None:
         """
         记录工具执行结果
 
@@ -89,7 +89,7 @@ class CircuitBreaker:
         else:
             self._on_success(tool_name)
 
-    def _on_failure(self, tool_name: str):
+    def _on_failure(self, tool_name: str) -> None:
         """处理失败"""
         # 增加失败计数
         self.failure_counts[tool_name] += 1
@@ -101,12 +101,12 @@ class CircuitBreaker:
                 f"🔴 Circuit Breaker: 工具 '{tool_name}' 已熔断（连续 {self.failure_counts[tool_name]} 次失败）"
             )
 
-    def _on_success(self, tool_name: str):
+    def _on_success(self, tool_name: str) -> None:
         """处理成功"""
         # 重置失败计数
         self.failure_counts[tool_name] = 0
 
-    def open(self, tool_name: str):
+    def open(self, tool_name: str) -> None:
         """手动开启熔断"""
         if not self.enabled:
             return
@@ -114,13 +114,13 @@ class CircuitBreaker:
         self.open_timestamps[tool_name] = time.time()
         print(f"🔴 Circuit Breaker: 工具 '{tool_name}' 已手动熔断")
 
-    def close(self, tool_name: str):
+    def close(self, tool_name: str) -> None:
         """关闭熔断，恢复工具"""
         self.failure_counts[tool_name] = 0
         self.open_timestamps.pop(tool_name, None)
         print(f"🟢 Circuit Breaker: 工具 '{tool_name}' 已恢复")
 
-    def get_status(self, tool_name: str) -> Dict[str, any]:
+    def get_status(self, tool_name: str) -> Dict[str, Any]:
         """
         获取工具的熔断状态
 
@@ -150,7 +150,7 @@ class CircuitBreaker:
         else:
             return {"state": "closed", "failure_count": self.failure_counts[tool_name]}
 
-    def get_all_status(self) -> Dict[str, Dict]:
+    def get_all_status(self) -> Dict[str, Dict[str, Any]]:
         """
         获取所有工具的熔断状态
 

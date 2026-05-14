@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import heapq
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .base import BaseMemory, MemoryConfig, MemoryItem
 
@@ -28,7 +28,7 @@ class WorkingMemory(BaseMemory):
 
     def __init__(
         self, config: MemoryConfig, storage_backend: Optional[Any] = None
-    ):
+    ) -> None:
         super().__init__(config, storage_backend)
 
         # 工作记忆专属配置
@@ -56,7 +56,7 @@ class WorkingMemory(BaseMemory):
         self.memories.append(memory_item)
         self.current_tokens += len(memory_item.content.split())
         self._enforce_capacity_limits()
-        return memory_item.id
+        return cast(str, memory_item.id)
 
     def retrieve(
         self,
@@ -289,14 +289,14 @@ class WorkingMemory(BaseMemory):
         """优先级 = 重要性 × 时间衰减"""
         priority = memory.importance
         priority *= self._calculate_time_decay(memory.timestamp)
-        return priority
+        return float(priority)
 
     def _calculate_time_decay(self, timestamp: datetime) -> float:
         """指数衰减：每 6 小时一档；最低保持 10%"""
         time_diff = datetime.now() - timestamp
         hours_passed = time_diff.total_seconds() / 3600
         decay = self.config.decay_factor ** (hours_passed / 6)
-        return max(0.1, decay)
+        return float(max(0.1, decay))
 
     def _enforce_capacity_limits(self) -> None:
         """容量 / token 超限时删除最低优先级"""

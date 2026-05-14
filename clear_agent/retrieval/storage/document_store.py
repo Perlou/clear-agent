@@ -24,7 +24,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 
 class DocumentStore(ABC):
@@ -100,10 +100,11 @@ class SQLiteDocumentStore(DocumentStore):
     """
 
     _instances: Dict[str, "SQLiteDocumentStore"] = {}
-    _initialized_dbs: set = set()
+    _initialized_dbs: set[str] = set()
     _class_lock = threading.RLock()
+    _initialized: bool = False
 
-    def __new__(cls, db_path: str = "./memory.db"):
+    def __new__(cls, db_path: str = "./memory.db") -> "SQLiteDocumentStore":
         """同路径单例"""
         key = ":memory:" if db_path == ":memory:" else os.path.abspath(db_path)
         with cls._class_lock:
@@ -112,7 +113,7 @@ class SQLiteDocumentStore(DocumentStore):
                 cls._instances[key] = instance
             return cls._instances[key]
 
-    def __init__(self, db_path: str = "./memory.db"):
+    def __init__(self, db_path: str = "./memory.db") -> None:
         # 避免重复初始化
         if hasattr(self, "_initialized") and self._initialized:
             return
@@ -152,7 +153,7 @@ class SQLiteDocumentStore(DocumentStore):
         if not hasattr(self.local, "connection"):
             self.local.connection = sqlite3.connect(self.db_path)
             self.local.connection.row_factory = sqlite3.Row
-        return self.local.connection
+        return cast(sqlite3.Connection, self.local.connection)
 
     def _init_database(self) -> None:
         """初始化所有表与索引"""

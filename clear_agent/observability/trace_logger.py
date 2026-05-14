@@ -9,7 +9,8 @@ import json
 import uuid
 import re
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from types import TracebackType
+from typing import Dict, Any, Literal, Optional, List, Type
 from pathlib import Path
 
 
@@ -34,7 +35,7 @@ class TraceLogger:
         output_dir: str = "memory/traces",
         sanitize: bool = True,
         html_include_raw_response: bool = False,
-    ):
+    ) -> None:
         """初始化 TraceLogger
 
         Args:
@@ -65,7 +66,7 @@ class TraceLogger:
         self.session_id = self._generate_session_id()
 
         # 事件缓存（用于生成统计和最终 HTML）
-        self._events: List[Dict] = []
+        self._events: List[Dict[str, Any]] = []
 
         # JSONL 文件路径
         self.jsonl_path = self.output_dir / f"trace-{self.session_id}.jsonl"
@@ -94,7 +95,7 @@ class TraceLogger:
 
     def log_event(
         self, event: str, payload: Dict[str, Any], step: Optional[int] = None
-    ):
+    ) -> None:
         """记录事件
 
         Args:
@@ -130,7 +131,7 @@ class TraceLogger:
         # 增量写入 HTML 事件片段
         self._write_html_event(event_obj)
 
-    def _sanitize_event(self, event: Dict) -> Dict:
+    def _sanitize_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """脱敏敏感信息
 
         脱敏规则：
@@ -174,7 +175,7 @@ class TraceLogger:
             # 其他类型直接返回
             return value
 
-    def finalize(self):
+    def finalize(self) -> None:
         """生成最终 HTML 并关闭文件
 
         步骤：
@@ -209,7 +210,7 @@ class TraceLogger:
         Returns:
             统计数据字典
         """
-        stats = {
+        stats: Dict[str, Any] = {
             "total_steps": 0,
             "total_tokens": 0,
             "total_cost": 0.0,
@@ -263,7 +264,7 @@ class TraceLogger:
 
         return stats
 
-    def _write_html_header(self):
+    def _write_html_header(self) -> None:
         """写入 HTML 头部"""
         header = f"""<!DOCTYPE html>
 <html>
@@ -419,7 +420,7 @@ class TraceLogger:
         self.html_file.write(header)
         self.html_file.flush()
 
-    def _write_html_event(self, event: Dict):
+    def _write_html_event(self, event: Dict[str, Any]) -> None:
         """写入单个事件的 HTML 片段（增量写入）"""
         event_type = event["event"]
         step = event.get("step", "")
@@ -460,7 +461,7 @@ class TraceLogger:
         self.html_file.write(event_html)
         self.html_file.flush()
 
-    def _write_html_footer(self, stats: Dict[str, Any]):
+    def _write_html_footer(self, stats: Dict[str, Any]) -> None:
         """写入 HTML 尾部（统计面板 + 脚本）"""
         # 构建工具调用统计表格
         tool_stats_rows = ""
@@ -540,11 +541,16 @@ class TraceLogger:
         self.html_file.write(footer)
         self.html_file.flush()
 
-    def __enter__(self):
+    def __enter__(self) -> "TraceLogger":
         """上下文管理器：进入"""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Literal[False]:
         """上下文管理器：退出（自动 finalize）"""
         # 如果发生异常，记录错误事件
         if exc_type is not None:

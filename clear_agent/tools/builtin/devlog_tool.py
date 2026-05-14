@@ -89,7 +89,7 @@ class DevLogStore:
             entries=[],
         )
 
-    def append(self, entry: DevLogEntry):
+    def append(self, entry: DevLogEntry) -> None:
         """追加日志条目"""
         self.entries.append(entry)
         self.updated_at = datetime.now().isoformat()
@@ -123,7 +123,10 @@ class DevLogStore:
 
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
-        stats = {"total_entries": len(self.entries), "by_category": {}}
+        stats: Dict[str, Any] = {
+            "total_entries": len(self.entries),
+            "by_category": {},
+        }
 
         for entry in self.entries:
             cat = entry.category
@@ -214,7 +217,7 @@ class DevLogTool(Tool):
         agent_name: str = "Agent",
         project_root: str = ".",
         persistence_dir: str = "memory/devlogs",
-    ):
+    ) -> None:
         """初始化 DevLogTool
 
         Args:
@@ -310,7 +313,7 @@ class DevLogTool(Tool):
                 return self._handle_clear()
             else:
                 return ToolResponse.error(
-                    code=ToolErrorCode.INVALID_PARAMETERS, message=f"未知操作：{action}"
+                    code=ToolErrorCode.INVALID_PARAM, message=f"未知操作：{action}"
                 )
 
         except Exception as e:
@@ -342,6 +345,8 @@ class DevLogTool(Tool):
 
         # 创建日志条目
         metadata = parameters.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
         entry = DevLogEntry.create(category, content, metadata)
 
         # 追加到存储
@@ -364,6 +369,8 @@ class DevLogTool(Tool):
     def _handle_read(self, parameters: Dict[str, Any]) -> ToolResponse:
         """处理读取操作"""
         filter_params = parameters.get("filter", {})
+        if not isinstance(filter_params, dict):
+            filter_params = {}
 
         category = filter_params.get("category")
         tags = filter_params.get("tags")
@@ -413,7 +420,7 @@ class DevLogTool(Tool):
             text=f"✅ 已清空 {old_count} 条日志", data={"cleared_count": old_count}
         )
 
-    def _persist(self):
+    def _persist(self) -> None:
         """持久化到文件"""
         filename = f"devlog-{self.session_id}.json"
         filepath = self.persistence_dir / filename
@@ -425,7 +432,7 @@ class DevLogTool(Tool):
 
         temp_path.replace(filepath)
 
-    def _load_if_exists(self):
+    def _load_if_exists(self) -> None:
         """加载已有日志（如果存在）"""
         filename = f"devlog-{self.session_id}.json"
         filepath = self.persistence_dir / filename

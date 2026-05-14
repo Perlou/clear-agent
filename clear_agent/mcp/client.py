@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from types import TracebackType
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, Type
 
 from .adapter import (
     MCPException,
@@ -173,7 +174,7 @@ class MCPClient:
                 return "\n".join(texts)
             return str(content)
 
-    def _connect(self):
+    def _connect(self) -> Any:
         """返回 async context manager；进入后 yield ``ClientSession``"""
         if self.transport == "stdio":
             return _stdio_session(**self.transport_params)
@@ -188,14 +189,14 @@ class MCPClient:
 class _stdio_session:
     """async context manager: 启动 stdio 子进程 + 初始化 ClientSession"""
 
-    def __init__(self, command: str, args: List[str], env: Dict[str, str]):
+    def __init__(self, command: str, args: List[str], env: Dict[str, str]) -> None:
         self.command = command
         self.args = args
         self.env = env
-        self._stdio_cm = None
-        self._session_cm = None
+        self._stdio_cm: Any = None
+        self._session_cm: Any = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Any:
         from mcp import ClientSession  # type: ignore
         from mcp.client.stdio import StdioServerParameters, stdio_client  # type: ignore
 
@@ -211,7 +212,12 @@ class _stdio_session:
         await session.initialize()
         return session
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
         if self._session_cm is not None:
             await self._session_cm.__aexit__(exc_type, exc, tb)
         if self._stdio_cm is not None:
@@ -221,13 +227,13 @@ class _stdio_session:
 class _sse_session:
     """async context manager: 连接 SSE / streamable_http endpoint"""
 
-    def __init__(self, url: str, headers: Dict[str, str]):
+    def __init__(self, url: str, headers: Dict[str, str]) -> None:
         self.url = url
         self.headers = headers
-        self._sse_cm = None
-        self._session_cm = None
+        self._sse_cm: Any = None
+        self._session_cm: Any = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Any:
         from mcp import ClientSession  # type: ignore
         try:
             from mcp.client.sse import sse_client  # type: ignore
@@ -243,7 +249,12 @@ class _sse_session:
         await session.initialize()
         return session
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
         if self._session_cm is not None:
             await self._session_cm.__aexit__(exc_type, exc, tb)
         if self._sse_cm is not None:

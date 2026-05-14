@@ -7,9 +7,9 @@
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 import re
-import yaml
+import yaml  # type: ignore[import-untyped]
 from dataclasses import dataclass
 
 
@@ -67,7 +67,7 @@ class SkillLoader:
         >>> print(skill.body)
     """
 
-    def __init__(self, skills_dir: Path):
+    def __init__(self, skills_dir: Path) -> None:
         """初始化技能加载器
 
         Args:
@@ -80,12 +80,12 @@ class SkillLoader:
         self.skills_cache: Dict[str, Skill] = {}
 
         # 仅元数据缓存（启动时加载）
-        self.metadata_cache: Dict[str, Dict] = {}
+        self.metadata_cache: Dict[str, Dict[str, Any]] = {}
 
         # 启动时扫描并加载元数据
         self._scan_skills()
 
-    def _scan_skills(self):
+    def _scan_skills(self) -> None:
         """扫描 skills/ 目录，加载元数据"""
         for skill_dir in self.skills_dir.iterdir():
             if not skill_dir.is_dir():
@@ -108,7 +108,7 @@ class SkillLoader:
                 "dir": skill_dir,
             }
 
-    def _parse_frontmatter_only(self, path: Path) -> Optional[Dict]:
+    def _parse_frontmatter_only(self, path: Path) -> Optional[Dict[str, Any]]:
         """仅解析 YAML frontmatter
 
         Args:
@@ -135,6 +135,10 @@ class SkillLoader:
             metadata = yaml.safe_load(yaml_str) or {}
         except yaml.YAMLError:
             return None
+
+        if not isinstance(metadata, dict):
+            return None
+        metadata = cast(Dict[str, Any], metadata)
 
         # 验证必需字段
         if "name" not in metadata or "description" not in metadata:
@@ -218,7 +222,7 @@ class SkillLoader:
         """
         return list(self.metadata_cache.keys())
 
-    def reload(self):
+    def reload(self) -> None:
         """重新扫描技能目录（热重载）"""
         self.skills_cache.clear()
         self.metadata_cache.clear()

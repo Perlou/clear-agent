@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 
 from .base import BaseMemory, MemoryConfig, MemoryItem
 
@@ -127,16 +127,16 @@ class SemanticMemory(BaseMemory):
         embedding_model: Optional["EmbeddingModel"] = None,
         vector_store: Optional["QdrantVectorStore"] = None,
         nlp: Optional[Any] = None,
-    ):
+    ) -> None:
         super().__init__(config, storage_backend)
 
         # 嵌入模型
-        self.embedding_model = embedding_model
+        self.embedding_model: Any = embedding_model
         if self.embedding_model is None:
             self._init_embedding_model()
 
         # 向量库
-        self.vector_store = vector_store
+        self.vector_store: Any = vector_store
         if self.vector_store is None:
             self._init_vector_store()
 
@@ -175,20 +175,65 @@ class SemanticMemory(BaseMemory):
         try:
             import os
 
-            from ..retrieval.embeddings import get_dimension
             from ..retrieval.storage.qdrant_store import QdrantConnectionManager
 
             self.vector_store = QdrantConnectionManager.get_instance(
                 url=os.getenv("QDRANT_URL"),
                 api_key=os.getenv("QDRANT_API_KEY"),
                 collection_name="clear_agent_semantic",
-                vector_size=get_dimension(384),
+                vector_size=self._embedding_dimension(),
                 distance="cosine",
             )
             logger.info("✅ Qdrant 向量库初始化完成（集合 clear_agent_semantic）")
         except Exception as e:
             logger.error(f"❌ Qdrant 初始化失败: {e}")
             raise
+
+    def _embedding_dimension(self, default: int = 384) -> int:
+        dim = getattr(self.embedding_model, "dimension", None)
+        if isinstance(dim, int) and dim > 0:
+            return dim
+        from ..retrieval.embeddings import get_dimension
+
+        return int(get_dimension(default))
+
+    @staticmethod
+    def _vector_from_embedding(embedding: Any) -> List[float]:
+        try:
+            raw = embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
+        except Exception:
+            raw = list(embedding) if embedding is not None else []
+        return [float(x) for x in raw]
+
+    def _metadata_for_memory(self, memory_item: MemoryItem) -> Dict[str, Any]:
+        entities = memory_item.metadata.get("entities", [])
+        relations = memory_item.metadata.get("relations", [])
+        return {
+            "memory_id": memory_item.id,
+            "user_id": memory_item.user_id,
+            "content": memory_item.content,
+            "memory_type": memory_item.memory_type,
+            "timestamp": int(memory_item.timestamp.timestamp()),
+            "importance": memory_item.importance,
+            "entities": entities,
+            "entity_count": len(entities),
+            "relation_count": len(relations),
+            "metadata": dict(memory_item.metadata),
+        }
+
+    def _upsert_vector(self, memory_item: MemoryItem) -> bool:
+        embedding = self.memory_embeddings.get(memory_item.id)
+        if embedding is None:
+            embedding = self.embedding_model.encode(memory_item.content)
+            self.memory_embeddings[memory_item.id] = embedding
+        vec = self._vector_from_embedding(embedding)
+        return bool(
+            self.vector_store.add_vectors(
+            vectors=[vec],
+            metadata=[self._metadata_for_memory(memory_item)],
+            ids=[memory_item.id],
+            )
+        )
 
     def _init_nlp(self) -> None:
         """尝试加载 spaCy；缺失时降级到 fallback"""
@@ -261,7 +306,7 @@ class SemanticMemory(BaseMemory):
             logger.info(
                 f"✅ 语义记忆已添加: {len(entities)} 实体 / {len(relations)} 关系"
             )
-            return memory_item.id
+            return cast(str, memory_item.id)
         except Exception as e:
             logger.error(f"❌ 添加语义记忆失败: {e}")
             raise
@@ -292,6 +337,9 @@ class SemanticMemory(BaseMemory):
             results: List[MemoryItem] = []
             for idx, r in enumerate(combined):
                 memory_id = r.get("memory_id") or r.get("id")
+                if memory_id is None:
+                    continue
+                memory_id = str(memory_id)
                 # 过滤已遗忘
                 local = next(
                     (m for m in self.semantic_memories if m.id == memory_id), None
@@ -366,6 +414,11 @@ class SemanticMemory(BaseMemory):
                 memory.importance = importance
             if metadata is not None:
                 memory.metadata.update(metadata)
+            try:
+                if not self._upsert_vector(memory):
+                    logger.warning("⚠️ 向量更新失败，但本地记忆已更新")
+            except Exception as e:
+                logger.warning(f"⚠️ Qdrant 更新失败（保留本地更新）: {e}")
             return True
         except Exception as e:
             logger.error(f"❌ 更新记忆失败: {e}")
@@ -382,10 +435,30 @@ class SemanticMemory(BaseMemory):
                 logger.warning(f"⚠️ Qdrant 删除失败（继续删除本地）: {e}")
             self.semantic_memories.remove(memory)
             self.memory_embeddings.pop(memory_id, None)
+            self._cleanup_orphan_graph_items()
             return True
         except Exception as e:
             logger.error(f"❌ 删除记忆失败: {e}")
             return False
+
+    def _cleanup_orphan_graph_items(self) -> None:
+        """Drop entities/relations no longer referenced by any active memory."""
+        referenced_entities = {
+            entity_id
+            for memory in self.semantic_memories
+            for entity_id in memory.metadata.get("entities", [])
+        }
+        self.entities = {
+            entity_id: entity
+            for entity_id, entity in self.entities.items()
+            if entity_id in referenced_entities
+        }
+        self.relations = [
+            relation
+            for relation in self.relations
+            if relation.from_entity in referenced_entities
+            and relation.to_entity in referenced_entities
+        ]
 
     def has_memory(self, memory_id: str) -> bool:
         return self._find_memory_by_id(memory_id) is not None
@@ -558,6 +631,9 @@ class SemanticMemory(BaseMemory):
 
         for r in vector_results:
             mid = r.get("memory_id") or r.get("id")
+            if mid is None:
+                continue
+            mid = str(mid)
             content = r.get("content", "")
             ch = hash(content.strip())
             if ch in seen_hashes:
@@ -572,6 +648,9 @@ class SemanticMemory(BaseMemory):
 
         for r in graph_results:
             mid = r.get("memory_id") or r.get("id")
+            if mid is None:
+                continue
+            mid = str(mid)
             ch = hash(r.get("content", "").strip())
             if mid in combined:
                 combined[mid]["graph_score"] = r.get("similarity", 0.0)

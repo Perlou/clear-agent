@@ -32,6 +32,46 @@ if TYPE_CHECKING:
     from ..registry import ToolRegistry
 
 
+class PathOutsideProjectRootError(PermissionError):
+    """Raised when a requested tool path escapes project_root."""
+
+
+def _resolve_path_within_project_root(
+    path: str, *, project_root: Path, working_dir: Path
+) -> Path:
+    """Resolve user-supplied paths and reject anything outside project_root."""
+    normalized = path.replace("\\", "/")
+    raw_path = Path(normalized)
+    candidate = raw_path if raw_path.is_absolute() else working_dir / raw_path
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(project_root)
+    except ValueError as exc:
+        raise PathOutsideProjectRootError(
+            f"路径 '{path}' 超出项目根目录 '{project_root}'"
+        ) from exc
+    return resolved
+
+
+def _atomic_write_text(full_path: Path, content: str) -> None:
+    """Write text via a sibling temp file and atomic replace."""
+    temp_name = (
+        f".{full_path.name}.{os.getpid()}."
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.tmp"
+    )
+    temp_path = full_path.with_name(temp_name)
+    try:
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(temp_path, full_path)
+    except Exception:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
+
 class ReadTool(Tool):
     """文件读取工具
 
@@ -155,6 +195,10 @@ class ReadTool(Tool):
                 },
             )
 
+        except PathOutsideProjectRootError as e:
+            return ToolResponse.error(
+                code=ToolErrorCode.ACCESS_DENIED, message=str(e)
+            )
         except PermissionError:
             return ToolResponse.error(
                 code=ToolErrorCode.PERMISSION_DENIED, message=f"无权限读取 '{path}'"
@@ -167,7 +211,7 @@ class ReadTool(Tool):
     def _list_directory(self, path: str, full_path: Path) -> ToolResponse:
         """列出目录内容（兼容 Windows 和 Linux）"""
         try:
-            entries = []
+            entries: List[Dict[str, Any]] = []
             total_files = 0
             total_dirs = 0
 
@@ -224,10 +268,13 @@ class ReadTool(Tool):
                 lines = [
                     f"目录 '{path}' 包含 {total_files} 个文件，{total_dirs} 个目录：\n"
                 ]
-                for entry in entries:
-                    type_icon = "📁" if entry["type"] == "directory" else "📄"
+                for display_entry in entries:
+                    type_icon = (
+                        "📁" if display_entry["type"] == "directory" else "📄"
+                    )
                     lines.append(
-                        f"{type_icon} {entry['name']:<40} {entry['size']:>10} {entry['mtime']}"
+                        f"{type_icon} {display_entry['name']:<40} "
+                        f"{display_entry['size']:>10} {display_entry['mtime']}"
                     )
                 text = "\n".join(lines)
 
@@ -252,11 +299,12 @@ class ReadTool(Tool):
 
     def _format_size(self, size: int) -> str:
         """格式化文件大小"""
+        value = float(size)
         for unit in ["B", "KB", "MB", "GB"]:
-            if size < 1024.0:
-                return f"{size:.1f}{unit}"
-            size /= 1024.0
-        return f"{size:.1f}TB"
+            if value < 1024.0:
+                return f"{value:.1f}{unit}"
+            value /= 1024.0
+        return f"{value:.1f}TB"
 
     def _format_time(self, timestamp: float) -> str:
         """格式化时间戳（兼容 Windows 和 Linux）"""
@@ -267,15 +315,9 @@ class ReadTool(Tool):
 
     def _resolve_path(self, path: str) -> Path:
         """解析相对路径（兼容 Windows 和 Linux）"""
-        # 统一路径分隔符：将反斜杠转换为正斜杠
-        path = path.replace("\\", "/")
-
-        # 如果是绝对路径，直接使用
-        if os.path.isabs(path):
-            return Path(path)
-
-        # 否则相对于 working_dir
-        return self.working_dir / path
+        return _resolve_path_within_project_root(
+            path, project_root=self.project_root, working_dir=self.working_dir
+        )
 
 
 class WriteTool(Tool):
@@ -375,12 +417,7 @@ class WriteTool(Tool):
                 full_path.parent.mkdir(parents=True, exist_ok=True)
 
             # 原子写入（临时文件 + 重命名）
-            temp_path = full_path.with_suffix(full_path.suffix + ".tmp")
-            with open(temp_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            # 原子重命名
-            os.replace(temp_path, full_path)
+            _atomic_write_text(full_path, content)
 
             size_bytes = len(content.encode("utf-8"))
 
@@ -395,6 +432,10 @@ class WriteTool(Tool):
                 },
             )
 
+        except PathOutsideProjectRootError as e:
+            return ToolResponse.error(
+                code=ToolErrorCode.ACCESS_DENIED, message=str(e)
+            )
         except PermissionError:
             return ToolResponse.error(
                 code=ToolErrorCode.PERMISSION_DENIED, message=f"无权限写入 '{path}'"
@@ -418,9 +459,9 @@ class WriteTool(Tool):
 
     def _resolve_path(self, path: str) -> Path:
         """解析相对路径"""
-        if os.path.isabs(path):
-            return Path(path)
-        return self.working_dir / path
+        return _resolve_path_within_project_root(
+            path, project_root=self.project_root, working_dir=self.working_dir
+        )
 
 
 class EditTool(Tool):
@@ -548,9 +589,8 @@ class EditTool(Tool):
             # 备份原文件
             backup_path = self._backup_file(full_path)
 
-            # 写入新内容
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
+            # 原子写入新内容
+            _atomic_write_text(full_path, new_content)
 
             changed_bytes = len(new_string.encode("utf-8")) - len(
                 old_string.encode("utf-8")
@@ -565,6 +605,10 @@ class EditTool(Tool):
                 },
             )
 
+        except PathOutsideProjectRootError as e:
+            return ToolResponse.error(
+                code=ToolErrorCode.ACCESS_DENIED, message=str(e)
+            )
         except PermissionError:
             return ToolResponse.error(
                 code=ToolErrorCode.PERMISSION_DENIED, message=f"无权限编辑 '{path}'"
@@ -588,9 +632,9 @@ class EditTool(Tool):
 
     def _resolve_path(self, path: str) -> Path:
         """解析相对路径"""
-        if os.path.isabs(path):
-            return Path(path)
-        return self.working_dir / path
+        return _resolve_path_within_project_root(
+            path, project_root=self.project_root, working_dir=self.working_dir
+        )
 
 
 class MultiEditTool(Tool):
@@ -720,9 +764,8 @@ class MultiEditTool(Tool):
             # 备份原文件
             backup_path = self._backup_file(full_path)
 
-            # 写入新内容
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
+            # 原子写入新内容
+            _atomic_write_text(full_path, content)
 
             changed_bytes = len(content.encode("utf-8")) - len(
                 original_content.encode("utf-8")
@@ -738,6 +781,10 @@ class MultiEditTool(Tool):
                 },
             )
 
+        except PathOutsideProjectRootError as e:
+            return ToolResponse.error(
+                code=ToolErrorCode.ACCESS_DENIED, message=str(e)
+            )
         except PermissionError:
             return ToolResponse.error(
                 code=ToolErrorCode.PERMISSION_DENIED, message=f"无权限编辑 '{path}'"
@@ -761,6 +808,6 @@ class MultiEditTool(Tool):
 
     def _resolve_path(self, path: str) -> Path:
         """解析相对路径"""
-        if os.path.isabs(path):
-            return Path(path)
-        return self.working_dir / path
+        return _resolve_path_within_project_root(
+            path, project_root=self.project_root, working_dir=self.working_dir
+        )

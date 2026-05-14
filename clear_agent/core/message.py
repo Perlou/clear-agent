@@ -1,6 +1,6 @@
 """消息系统"""
 
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, cast
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -12,10 +12,10 @@ class Message(BaseModel):
 
     content: str
     role: MessageRole
-    timestamp: datetime = None
+    timestamp: datetime
     metadata: Optional[Dict[str, Any]] = None
 
-    def __init__(self, content: str, role: MessageRole, **kwargs):
+    def __init__(self, content: str, role: MessageRole, **kwargs: Any) -> None:
         super().__init__(
             content=content,
             role=role,
@@ -41,7 +41,7 @@ class Message(BaseModel):
 
         return cls(
             content=data["content"],
-            role=data["role"],
+            role=cast(MessageRole, data["role"]),
             timestamp=timestamp,
             metadata=data.get("metadata"),
         )

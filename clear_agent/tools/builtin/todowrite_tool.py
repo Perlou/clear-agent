@@ -39,7 +39,7 @@ class TodoItem:
     created_at: str  # 创建时间
     updated_at: str = ""  # 更新时间
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.updated_at:
             self.updated_at = self.created_at
 
@@ -66,7 +66,7 @@ class TodoList:
         """获取已完成任务"""
         return [todo for todo in self.todos if todo.status == "completed"]
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> Dict[str, int]:
         """获取统计信息"""
         total = len(self.todos)
         completed = sum(1 for t in self.todos if t.status == "completed")
@@ -91,7 +91,9 @@ class TodoWriteTool(Tool):
     - 持久化到文件
     """
 
-    def __init__(self, project_root: str = ".", persistence_dir: str = "memory/todos"):
+    def __init__(
+        self, project_root: str = ".", persistence_dir: str = "memory/todos"
+    ) -> None:
         """初始化 TodoWriteTool
 
         Args:
@@ -254,7 +256,7 @@ class TodoWriteTool(Tool):
                 code=ToolErrorCode.INTERNAL_ERROR, message=f"处理任务列表失败：{str(e)}"
             )
 
-    def _validate_todos(self, todos_data: list) -> dict:
+    def _validate_todos(self, todos_data: Any) -> Dict[str, Any]:
         """验证 todos 约束
 
         Returns:
@@ -323,7 +325,7 @@ class TodoWriteTool(Tool):
 
         return ". ".join(recap_parts)
 
-    def _persist_todos(self):
+    def _persist_todos(self) -> None:
         """持久化到文件（原子写入）"""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         filename = f"todoList-{timestamp}.json"
@@ -352,7 +354,7 @@ class TodoWriteTool(Tool):
 
         temp_path.replace(filepath)
 
-    def load_todos(self, filepath: str):
+    def load_todos(self, filepath: str) -> None:
         """从文件加载任务列表
 
         Args:

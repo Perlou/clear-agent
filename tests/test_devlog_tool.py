@@ -317,6 +317,21 @@ class TestDevLogTool:
             assert "已清空 2 条日志" in response.text
             assert len(tool.store.entries) == 0
 
+    def test_unknown_action_returns_invalid_param(self):
+        """测试未知操作返回参数错误而不是内部错误"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tool = DevLogTool(
+                session_id="s-test-unknown",
+                agent_name="TestAgent",
+                project_root=temp_dir,
+            )
+
+            response = tool.run({"action": "unknown"})
+
+            assert response.status == ToolStatus.ERROR
+            assert response.error_info["code"] == ToolErrorCode.INVALID_PARAM
+            assert "未知操作" in response.text
+
     def test_persistence(self):
         """测试持久化"""
         with tempfile.TemporaryDirectory() as temp_dir:

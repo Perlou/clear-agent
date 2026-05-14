@@ -1,6 +1,6 @@
 """简单Agent实现 - 基于 Function Calling"""
 
-from typing import Optional, Iterator, TYPE_CHECKING, List, Dict, Any, AsyncGenerator
+from typing import Optional, Iterator, TYPE_CHECKING, List, Dict, Any, AsyncGenerator, cast
 import json
 
 from ..core.agent import Agent
@@ -32,7 +32,7 @@ class SimpleAgent(Agent):
         tool_registry: Optional["ToolRegistry"] = None,
         enable_tool_calling: bool = True,
         max_tool_iterations: int = 3,
-    ):
+    ) -> None:
         """
         初始化SimpleAgent
 
@@ -46,10 +46,11 @@ class SimpleAgent(Agent):
             max_tool_iterations: 最大工具调用迭代次数
         """
         super().__init__(name, llm, system_prompt, config, tool_registry=tool_registry)
+        self.tool_registry: Optional["ToolRegistry"] = tool_registry
         self.enable_tool_calling = enable_tool_calling and tool_registry is not None
         self.max_tool_iterations = max_tool_iterations
 
-    def as_graph(self, checkpointer=None):
+    def as_graph(self, checkpointer: Any = None) -> Any:
         """返回等价的 Simple StateGraph
 
         新代码推荐使用此方法获取 graph 实例，享受 checkpoint/resume/HITL 能力。
@@ -64,7 +65,7 @@ class SimpleAgent(Agent):
             checkpointer=checkpointer,
         )
 
-    def run(self, input_text: str, **kwargs) -> str:
+    def run(self, input_text: str, **kwargs: Any) -> str:
         """
         运行 SimpleAgent（基于 Function Calling）
 
@@ -280,7 +281,7 @@ class SimpleAgent(Agent):
 
     def _build_messages(self, input_text: str) -> List[Dict[str, str]]:
         """构建消息列表"""
-        messages = []
+        messages: List[Dict[str, str]] = []
 
         # 添加系统提示词
         if self.system_prompt:
@@ -295,7 +296,7 @@ class SimpleAgent(Agent):
 
         return messages
 
-    def add_tool(self, tool, auto_expand: bool = True) -> None:
+    def add_tool(self, tool: Any, auto_expand: bool = True) -> None:
         """
         添加工具到Agent（便利方法）
 
@@ -313,25 +314,26 @@ class SimpleAgent(Agent):
 
         # 直接使用 ToolRegistry 的 register_tool 方法
         # ToolRegistry 会自动处理工具展开
+        assert self.tool_registry is not None
         self.tool_registry.register_tool(tool, auto_expand=auto_expand)
 
     def remove_tool(self, tool_name: str) -> bool:
         """移除工具（便利方法）"""
         if self.tool_registry:
-            return self.tool_registry.unregister_tool(tool_name)
+            return bool(self.tool_registry.unregister_tool(tool_name))
         return False
 
-    def list_tools(self) -> list:
+    def list_tools(self) -> List[str]:
         """列出所有可用工具"""
         if self.tool_registry:
-            return self.tool_registry.list_tools()
+            return cast(List[str], self.tool_registry.list_tools())
         return []
 
     def has_tools(self) -> bool:
         """检查是否有可用工具"""
-        return self.enable_tool_calling and self.tool_registry is not None
+        return bool(self.enable_tool_calling and self.tool_registry is not None)
 
-    def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
+    def stream_run(self, input_text: str, **kwargs: Any) -> Iterator[str]:
         """
         流式运行Agent
 
@@ -343,7 +345,7 @@ class SimpleAgent(Agent):
             Agent响应片段
         """
         # 构建消息列表
-        messages = []
+        messages: List[Dict[str, str]] = []
 
         if self.system_prompt:
             messages.append({"role": "system", "content": self.system_prompt})
@@ -369,7 +371,7 @@ class SimpleAgent(Agent):
         on_start: LifecycleHook = None,
         on_finish: LifecycleHook = None,
         on_error: LifecycleHook = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """
         SimpleAgent 真正的流式执行

@@ -19,6 +19,7 @@ import asyncio
 import inspect
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import (
     Any,
     AsyncIterator,
@@ -33,14 +34,17 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
     get_type_hints,
 )
 
 from .checkpoint import BaseCheckpointer, Checkpoint, _uuid7
+from .config import Config
 from .exceptions import ClearAgentException
 from .interrupt import (
     GraphInterrupt,
     GraphPaused,
+    InterruptExpiredError,
     _RunContext,
     _set_run_ctx,
     _reset_run_ctx,
@@ -259,7 +263,11 @@ class StateGraph(Generic[S]):
         self._nodes: Dict[str, NodeFn] = {}
         self._edges: List[_Edge] = []
         self._conditional_edges: List[_ConditionalEdge] = []
-        self._reducers: Dict[str, Callable] = _extract_reducers(state_schema)
+        self._reducers: Dict[str, Callable] = (
+            _extract_reducers(cast(Type[Any], state_schema))
+            if state_schema is not None
+            else {}
+        )
 
     # ---------- 构建 API ----------
 
@@ -311,20 +319,36 @@ class StateGraph(Generic[S]):
         all_node_names = set(self._nodes.keys()) | {START, END}
 
         # 校验 add_edge 的两端
+        static_sources: Dict[str, str] = {}
         for e in self._edges:
             if e.source not in all_node_names:
                 raise GraphCompileError(f"add_edge 引用了未知节点: {e.source}")
             if e.target not in all_node_names:
                 raise GraphCompileError(f"add_edge 引用了未知节点: {e.target}")
+            if e.source in static_sources:
+                raise GraphCompileError(
+                    f"multiple outgoing static edges from {e.source} are not supported"
+                )
+            static_sources[e.source] = e.target
 
         # 校验 conditional edges 的 source
+        conditional_sources: set[str] = set()
         for ce in self._conditional_edges:
             if ce.source not in all_node_names:
                 raise GraphCompileError(
                     f"add_conditional_edges 引用了未知节点: {ce.source}"
                 )
+            if ce.source in conditional_sources:
+                raise GraphCompileError(
+                    f"multiple conditional edges from {ce.source} are not supported"
+                )
+            conditional_sources.add(ce.source)
             if ce.mapping:
                 for v in ce.mapping.values():
+                    if isinstance(v, list):
+                        raise GraphCompileError(
+                            "conditional fan-out lists are not supported"
+                        )
                     targets = v if isinstance(v, list) else [v]
                     for t in targets:
                         if t not in all_node_names:
@@ -480,6 +504,7 @@ class CompiledGraph(Generic[S]):
         ckpt = self.checkpointer.get_tuple(thread_id, checkpoint_id)
         if ckpt is None:
             raise GraphError(f"thread {thread_id} 无可恢复 checkpoint")
+        self._assert_interrupt_not_expired(ckpt)
         state = dict(ckpt.state)
         if state_patch:
             state = self._merge(state, dict(state_patch))
@@ -518,6 +543,7 @@ class CompiledGraph(Generic[S]):
         ckpt = await self.checkpointer.aget_tuple(thread_id, checkpoint_id)
         if ckpt is None:
             raise GraphError(f"thread {thread_id} 无可恢复 checkpoint")
+        self._assert_interrupt_not_expired(ckpt)
         state = dict(ckpt.state)
         if state_patch:
             state = self._merge(state, dict(state_patch))
@@ -546,7 +572,7 @@ class CompiledGraph(Generic[S]):
     def list_checkpoints(self, thread_id: str, limit: int = 50) -> List[Checkpoint]:
         if self.checkpointer is None:
             return []
-        return self.checkpointer.list(thread_id, limit=limit)
+        return cast(List[Checkpoint], self.checkpointer.list(thread_id, limit=limit))
 
     def get_state(
         self, thread_id: str, checkpoint_id: Optional[str] = None
@@ -567,14 +593,14 @@ class CompiledGraph(Generic[S]):
         for name in self._nodes:
             lines.append(f"    {name}[{name}]")
         # 静态边
-        for src, tgt in self._static_next.items():
-            lines.append(f"    {src} --> {tgt}")
+        for src, static_tgt in self._static_next.items():
+            lines.append(f"    {src} --> {static_tgt}")
         # 条件边（用虚线）
         for src, ce in self._cond_next.items():
             if ce.mapping:
                 for label, tgt in ce.mapping.items():
-                    targets = tgt if isinstance(tgt, list) else [tgt]
-                    for t in targets:
+                    target_values = tgt if isinstance(tgt, list) else [tgt]
+                    for t in target_values:
                         lines.append(f'    {src} -.{label}.-> {t}')
             else:
                 lines.append(f'    {src} -.?.-> ???')
@@ -587,7 +613,7 @@ class CompiledGraph(Generic[S]):
             return dict(input)
         # pydantic / dataclass 兼容
         if hasattr(input, "model_dump"):
-            return input.model_dump()
+            return cast(Dict[str, Any], input.model_dump())
         if hasattr(input, "__dict__"):
             return dict(input.__dict__)
         raise GraphError(f"无法将 input 转为 dict: {type(input)}")
@@ -599,6 +625,17 @@ class CompiledGraph(Generic[S]):
             reducer = self._reducers.get(k, replace)
             out[k] = reducer(out.get(k), v)
         return out
+
+    def _assert_interrupt_not_expired(self, ckpt: Checkpoint) -> None:
+        if ckpt.metadata.get("source") != "interrupt":
+            return
+        ttl = Config().hitl_interrupt_ttl_seconds
+        if ttl <= 0:
+            return
+        if datetime.now() - ckpt.created_at > timedelta(seconds=ttl):
+            raise InterruptExpiredError(
+                f"interrupt checkpoint {ckpt.id} expired after {ttl} seconds"
+            )
 
     def _route(self, state: Dict[str, Any], current: str) -> str:
         """决定 current 节点的下一节点（同步路径）
@@ -614,7 +651,11 @@ class CompiledGraph(Generic[S]):
                     f"节点 {current} 的 router 是 async，请使用 ainvoke/astream"
                 )
             decision = ce.router(state)
-            return self._resolve_decision(decision, ce.mapping)
+            if inspect.isawaitable(decision):
+                raise GraphError(
+                    f"节点 {current} 的 router 返回 awaitable，请使用 ainvoke/astream"
+                )
+            return self._resolve_decision(cast(RouterReturn, decision), ce.mapping)
         if current in self._static_next:
             return self._static_next[current]
         return END
@@ -626,7 +667,9 @@ class CompiledGraph(Generic[S]):
                 decision = await ce.router(state)
             else:
                 decision = ce.router(state)
-            return self._resolve_decision(decision, ce.mapping)
+                if inspect.isawaitable(decision):
+                    decision = await cast(Awaitable[RouterReturn], decision)
+            return self._resolve_decision(cast(RouterReturn, decision), ce.mapping)
         if current in self._static_next:
             return self._static_next[current]
         return END
@@ -638,9 +681,7 @@ class CompiledGraph(Generic[S]):
     ) -> str:
         """根据 router 决策与 mapping 解析为目标节点"""
         if isinstance(decision, list):
-            # 并行多分支：本期选第一个，告警 todo
-            # （实现真正的并行执行；本期先支持单分支返回）
-            decision = decision[0] if decision else END
+            raise GraphError("router fan-out lists are not supported")
         if mapping:
             target = mapping.get(decision)
             if target is None:
@@ -648,7 +689,7 @@ class CompiledGraph(Generic[S]):
                     f"router 返回 '{decision}' 但 mapping 中无对应项"
                 )
             if isinstance(target, list):
-                target = target[0] if target else END
+                raise GraphError("conditional fan-out lists are not supported")
             return target
         return decision
 
@@ -660,7 +701,10 @@ class CompiledGraph(Generic[S]):
         ctx = _current_run_ctx_get()
         if ctx is not None:
             ctx.reset_counter()
-        return fn(state)
+        result = fn(state)
+        if inspect.isawaitable(result):
+            raise GraphError(f"节点 {name} 返回 awaitable，请使用 ainvoke/astream")
+        return cast(NodeReturn, result)
 
     async def _call_node_async(self, name: str, state: Dict[str, Any]) -> NodeReturn:
         fn = self._nodes[name]
@@ -668,10 +712,11 @@ class CompiledGraph(Generic[S]):
         if ctx is not None:
             ctx.reset_counter()
         if inspect.iscoroutinefunction(fn):
-            return await fn(state)
+            return cast(NodeReturn, await fn(state))
         # 同步 fn 在 ainvoke 路径下放线程池
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, fn, state)
+        sync_fn = cast(SyncNodeFn, fn)
+        return cast(NodeReturn, await loop.run_in_executor(None, sync_fn, state))
 
     def _write_checkpoint(
         self,

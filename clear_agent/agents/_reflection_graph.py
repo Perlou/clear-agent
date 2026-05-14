@@ -9,7 +9,16 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Dict, List, Optional, TYPE_CHECKING, TypedDict
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TYPE_CHECKING,
+    TypedDict,
+)
 
 from ..core.checkpoint import BaseCheckpointer
 from ..core.config import Config
@@ -76,7 +85,9 @@ _REVISE_PROMPT = """你是一个反思型专家的「修订阶段」。
 """
 
 
-def _make_generate_node(llm: "ClearAgentLLM"):
+def _make_generate_node(
+    llm: "ClearAgentLLM",
+) -> Callable[[ReflectionGraphState], Dict[str, Any]]:
     def generate_node(state: ReflectionGraphState) -> Dict[str, Any]:
         question = state.get("question", "")
         prompt = _GENERATE_PROMPT.format(question=question)
@@ -94,7 +105,9 @@ def _make_generate_node(llm: "ClearAgentLLM"):
     return generate_node
 
 
-def _make_reflect_node(llm: "ClearAgentLLM"):
+def _make_reflect_node(
+    llm: "ClearAgentLLM",
+) -> Callable[[ReflectionGraphState], Dict[str, Any]]:
     def reflect_node(state: ReflectionGraphState) -> Dict[str, Any]:
         prompt = _REFLECT_PROMPT.format(
             question=state.get("question", ""),
@@ -114,7 +127,9 @@ def _make_reflect_node(llm: "ClearAgentLLM"):
     return reflect_node
 
 
-def _make_revise_node(llm: "ClearAgentLLM"):
+def _make_revise_node(
+    llm: "ClearAgentLLM",
+) -> Callable[[ReflectionGraphState], Dict[str, Any]]:
     def revise_node(state: ReflectionGraphState) -> Dict[str, Any]:
         prompt = _REVISE_PROMPT.format(
             question=state.get("question", ""),

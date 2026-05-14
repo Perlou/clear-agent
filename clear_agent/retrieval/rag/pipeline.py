@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 
 from .document import Document, DocumentChunk  # noqa: F401  (re-export friendly)
 from ..embeddings import get_dimension, get_text_embedder
@@ -66,7 +66,7 @@ DEFAULT_RAG_COLLECTION = "clear_agent_rag_vectors"
 # ==================================================================
 
 
-def _get_markitdown_instance():
+def _get_markitdown_instance() -> Any:
     """获取 MarkItDown 实例；未装则返回 None"""
     try:
         from markitdown import MarkItDown  # type: ignore
@@ -563,6 +563,14 @@ def _create_default_vector_store(dimension: Optional[int] = None) -> QdrantVecto
     )
 
 
+def _embedder_dimension(embedder: Any, default: int = 384) -> int:
+    """Prefer an explicitly supplied embedder's dimension over the global singleton."""
+    dim = getattr(embedder, "dimension", None)
+    if isinstance(dim, int) and dim > 0:
+        return dim
+    return int(get_dimension(default))
+
+
 def _normalize_vec(v: Any, dimension: int) -> List[float]:
     """numpy / list / tuple → ``List[float]``，并对齐维度（不足填 0，超长截断）"""
     if hasattr(v, "tolist"):
@@ -600,7 +608,7 @@ def index_chunks(
         return
 
     embedder = embedder or get_text_embedder()
-    dimension = get_dimension(384)
+    dimension = _embedder_dimension(embedder, 384)
 
     if store is None:
         store = _create_default_vector_store(dimension)
@@ -706,7 +714,7 @@ def index_chunks(
 def embed_query(query: str, embedder: Optional[Any] = None) -> List[float]:
     """对查询文本做 embedding；失败返回零向量"""
     embedder = embedder or get_text_embedder()
-    dimension = get_dimension(384)
+    dimension = _embedder_dimension(embedder, 384)
     try:
         vec = embedder.encode(query)
         if hasattr(vec, "tolist"):
@@ -743,11 +751,14 @@ def search_vectors(
         where["rag_namespace"] = rag_namespace
 
     try:
-        return store.search_similar(
-            query_vector=qv,
-            limit=top_k,
-            score_threshold=score_threshold,
-            where=where,
+        return cast(
+            List[Dict[str, Any]],
+            store.search_similar(
+                query_vector=qv,
+                limit=top_k,
+                score_threshold=score_threshold,
+                where=where,
+            ),
         )
     except Exception as e:
         print(f"[WARNING] RAG search failed: {e}")
@@ -893,7 +904,7 @@ def search_vectors_expanded(
 
 def _try_load_cross_encoder(
     model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
-):
+) -> Any:
     """加载 cross-encoder；未装 sentence-transformers 返回 None"""
     try:
         from sentence_transformers import CrossEncoder  # type: ignore
@@ -938,6 +949,9 @@ def compute_graph_signals_from_pool(
     for h in vector_hits:
         meta = h.get("metadata", {})
         did = meta.get("doc_id") or meta.get("memory_id") or h.get("id")
+        if did is None:
+            continue
+        did = str(did)
         by_doc.setdefault(did, []).append(h)
 
     doc_counts = {d: len(arr) for d, arr in by_doc.items()}
@@ -1292,7 +1306,8 @@ def create_rag_pipeline(
         ``{"store", "namespace", "add_documents", "search", "search_advanced",
         "get_stats", "rerank", "summarize"}``
     """
-    dimension = get_dimension(384)
+    active_embedder = embedder or get_text_embedder()
+    dimension = _embedder_dimension(active_embedder, 384)
     store = QdrantVectorStore(
         url=qdrant_url,
         api_key=qdrant_api_key,
@@ -1315,7 +1330,7 @@ def create_rag_pipeline(
             store=store,
             chunks=chunks,
             rag_namespace=rag_namespace,
-            embedder=embedder,
+            embedder=active_embedder,
         )
         return len(chunks)
 
@@ -1328,7 +1343,7 @@ def create_rag_pipeline(
             top_k=top_k,
             rag_namespace=rag_namespace,
             score_threshold=score_threshold,
-            embedder=embedder,
+            embedder=active_embedder,
         )
 
     def search_advanced(
@@ -1347,11 +1362,11 @@ def create_rag_pipeline(
             enable_hyde=enable_hyde,
             score_threshold=score_threshold,
             llm=llm,
-            embedder=embedder,
+            embedder=active_embedder,
         )
 
     def get_stats() -> Dict[str, Any]:
-        return store.get_collection_stats()
+        return cast(Dict[str, Any], store.get_collection_stats())
 
     def rerank(
         query: str, items: List[Dict], top_k: int = 10

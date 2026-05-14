@@ -3,7 +3,7 @@
 import ast
 import operator
 import math
-from typing import Dict, Any, List
+from typing import Any, Callable, ClassVar, Dict, List
 
 from ..base import Tool, ToolParameter
 from ..response import ToolResponse
@@ -14,7 +14,7 @@ class CalculatorTool(Tool):
     """Python计算器工具"""
 
     # 支持的操作符
-    OPERATORS = {
+    OPERATORS: ClassVar[Dict[type[ast.AST], Callable[..., Any]]] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -25,7 +25,7 @@ class CalculatorTool(Tool):
     }
 
     # 支持的函数
-    FUNCTIONS = {
+    FUNCTIONS: ClassVar[Dict[str, Any]] = {
         "abs": abs,
         "round": round,
         "max": max,
@@ -41,7 +41,7 @@ class CalculatorTool(Tool):
         "e": math.e,
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             name="python_calculator",
             description="执行数学计算。支持基本运算、数学函数等。例如：2+3*4, sqrt(16), sin(pi/2)等。",
@@ -101,7 +101,7 @@ class CalculatorTool(Tool):
                 context={"expression": expression},
             )
 
-    def _eval_node(self, node):
+    def _eval_node(self, node: ast.AST) -> Any:
         """递归计算AST节点"""
         if isinstance(node, ast.Constant):  # Python 3.8+（涵盖数字 / 字符串 / None / 布尔）
             return node.value
@@ -109,16 +109,25 @@ class CalculatorTool(Tool):
         elif hasattr(ast, "Num") and isinstance(node, ast.Num):  # pragma: no cover
             return node.n
         elif isinstance(node, ast.BinOp):
-            return self.OPERATORS[type(node.op)](
-                self._eval_node(node.left), self._eval_node(node.right)
-            )
+            op = self.OPERATORS.get(type(node.op))
+            if op is None:
+                raise ValueError(f"不支持的操作符: {type(node.op).__name__}")
+            return op(self._eval_node(node.left), self._eval_node(node.right))
         elif isinstance(node, ast.UnaryOp):
-            return self.OPERATORS[type(node.op)](self._eval_node(node.operand))
+            op = self.OPERATORS.get(type(node.op))
+            if op is None:
+                raise ValueError(f"不支持的一元操作符: {type(node.op).__name__}")
+            return op(self._eval_node(node.operand))
         elif isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name):
+                raise ValueError("只支持直接调用已允许的数学函数")
             func_name = node.func.id
             if func_name in self.FUNCTIONS:
+                func = self.FUNCTIONS[func_name]
+                if not callable(func):
+                    raise ValueError(f"不支持调用常量: {func_name}")
                 args = [self._eval_node(arg) for arg in node.args]
-                return self.FUNCTIONS[func_name](*args)
+                return func(*args)
             else:
                 raise ValueError(f"不支持的函数: {func_name}")
         elif isinstance(node, ast.Name):
@@ -129,7 +138,7 @@ class CalculatorTool(Tool):
         else:
             raise ValueError(f"不支持的表达式类型: {type(node)}")
 
-    def get_parameters(self):
+    def get_parameters(self) -> List[ToolParameter]:
         """获取工具参数定义"""
         from ..base import ToolParameter
 
@@ -155,4 +164,4 @@ def calculate(expression: str) -> str:
         计算结果字符串
     """
     tool = CalculatorTool()
-    return tool.run({"input": expression})
+    return str(tool.run({"input": expression}).text)

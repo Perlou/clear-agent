@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 import time
 import os
+from unittest.mock import patch
 
 from clear_agent.tools.builtin.file_tools import (
     ReadTool,
@@ -98,6 +99,24 @@ class TestReadTool:
         assert cached_metadata["file_mtime_ms"] == response.data["file_mtime_ms"]
         assert cached_metadata["file_size_bytes"] == response.data["file_size_bytes"]
 
+    @pytest.mark.parametrize("path_kind", ["parent", "absolute"])
+    def test_read_rejects_paths_outside_project_root(
+        self, temp_workspace, registry, path_kind
+    ):
+        """ReadTool 不能读取 project_root 外的文件。"""
+        outside = temp_workspace.parent / f"{temp_workspace.name}_outside_read.txt"
+        outside.write_text("secret", encoding="utf-8")
+        try:
+            path = f"../{outside.name}" if path_kind == "parent" else str(outside)
+            read_tool = ReadTool(project_root=str(temp_workspace), registry=registry)
+
+            response = read_tool.run({"path": path})
+
+            assert response.status == ToolStatus.ERROR
+            assert response.error_info["code"] == ToolErrorCode.ACCESS_DENIED
+        finally:
+            outside.unlink(missing_ok=True)
+
 
 class TestWriteTool:
     """WriteTool 测试"""
@@ -173,6 +192,25 @@ class TestWriteTool:
 
         # 验证没有临时文件残留
         assert not (temp_workspace / "atomic.txt.tmp").exists()
+
+    @pytest.mark.parametrize("path_kind", ["parent", "absolute"])
+    def test_write_rejects_paths_outside_project_root(
+        self, temp_workspace, registry, path_kind
+    ):
+        """WriteTool 不能创建或覆盖 project_root 外的文件。"""
+        outside = temp_workspace.parent / f"{temp_workspace.name}_outside_write.txt"
+        outside.write_text("original", encoding="utf-8")
+        try:
+            path = f"../{outside.name}" if path_kind == "parent" else str(outside)
+            write_tool = WriteTool(project_root=str(temp_workspace), registry=registry)
+
+            response = write_tool.run({"path": path, "content": "changed"})
+
+            assert response.status == ToolStatus.ERROR
+            assert response.error_info["code"] == ToolErrorCode.ACCESS_DENIED
+            assert outside.read_text(encoding="utf-8") == "original"
+        finally:
+            outside.unlink(missing_ok=True)
 
 
 class TestEditTool:
@@ -274,6 +312,48 @@ class TestEditTool:
         assert len(backup_files) > 0
         assert backup_files[0].read_text(encoding="utf-8") == original_content
 
+    @pytest.mark.parametrize("path_kind", ["parent", "absolute"])
+    def test_edit_rejects_paths_outside_project_root(
+        self, temp_workspace, registry, path_kind
+    ):
+        """EditTool 不能修改 project_root 外的文件。"""
+        outside = temp_workspace.parent / f"{temp_workspace.name}_outside_edit.txt"
+        outside.write_text("old", encoding="utf-8")
+        try:
+            path = f"../{outside.name}" if path_kind == "parent" else str(outside)
+            edit_tool = EditTool(project_root=str(temp_workspace), registry=registry)
+
+            response = edit_tool.run(
+                {"path": path, "old_string": "old", "new_string": "new"}
+            )
+
+            assert response.status == ToolStatus.ERROR
+            assert response.error_info["code"] == ToolErrorCode.ACCESS_DENIED
+            assert outside.read_text(encoding="utf-8") == "old"
+        finally:
+            outside.unlink(missing_ok=True)
+
+    def test_edit_write_failure_preserves_original(self, temp_workspace, registry):
+        """EditTool 写入阶段失败时不能留下半写文件。"""
+        test_file = temp_workspace / "important.txt"
+        test_file.write_text("old value", encoding="utf-8")
+        edit_tool = EditTool(project_root=str(temp_workspace), registry=registry)
+
+        with patch(
+            "clear_agent.tools.builtin.file_tools.os.replace",
+            side_effect=OSError("disk full"),
+        ):
+            response = edit_tool.run(
+                {
+                    "path": "important.txt",
+                    "old_string": "old",
+                    "new_string": "new",
+                }
+            )
+
+        assert response.status == ToolStatus.ERROR
+        assert test_file.read_text(encoding="utf-8") == "old value"
+
 
 class TestMultiEditTool:
     """MultiEditTool 测试"""
@@ -369,6 +449,59 @@ class TestMultiEditTool:
 
         # 验证文件内容未被修改（原子性）
         assert test_file.read_text(encoding="utf-8") == original_content
+
+    @pytest.mark.parametrize("path_kind", ["parent", "absolute"])
+    def test_multiedit_rejects_paths_outside_project_root(
+        self, temp_workspace, registry, path_kind
+    ):
+        """MultiEditTool 不能修改 project_root 外的文件。"""
+        outside = temp_workspace.parent / f"{temp_workspace.name}_outside_multiedit.txt"
+        outside.write_text("old", encoding="utf-8")
+        try:
+            path = f"../{outside.name}" if path_kind == "parent" else str(outside)
+            multiedit_tool = MultiEditTool(
+                project_root=str(temp_workspace), registry=registry
+            )
+
+            response = multiedit_tool.run(
+                {
+                    "path": path,
+                    "edits": [{"old_string": "old", "new_string": "new"}],
+                }
+            )
+
+            assert response.status == ToolStatus.ERROR
+            assert response.error_info["code"] == ToolErrorCode.ACCESS_DENIED
+            assert outside.read_text(encoding="utf-8") == "old"
+        finally:
+            outside.unlink(missing_ok=True)
+
+    def test_multiedit_write_failure_preserves_original(
+        self, temp_workspace, registry
+    ):
+        """MultiEditTool 写入阶段失败时不能留下半写文件。"""
+        test_file = temp_workspace / "important.txt"
+        test_file.write_text("alpha beta", encoding="utf-8")
+        multiedit_tool = MultiEditTool(
+            project_root=str(temp_workspace), registry=registry
+        )
+
+        with patch(
+            "clear_agent.tools.builtin.file_tools.os.replace",
+            side_effect=OSError("disk full"),
+        ):
+            response = multiedit_tool.run(
+                {
+                    "path": "important.txt",
+                    "edits": [
+                        {"old_string": "alpha", "new_string": "ALPHA"},
+                        {"old_string": "beta", "new_string": "BETA"},
+                    ],
+                }
+            )
+
+        assert response.status == ToolStatus.ERROR
+        assert test_file.read_text(encoding="utf-8") == "alpha beta"
 
 
 class TestOptimisticLocking:

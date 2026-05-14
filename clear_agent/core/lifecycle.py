@@ -67,7 +67,9 @@ class AgentEvent:
     data: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def create(cls, event_type: EventType, agent_name: str, **data) -> "AgentEvent":
+    def create(
+        cls, event_type: EventType, agent_name: str, **data: Any
+    ) -> "AgentEvent":
         """创建事件的便捷方法
 
         Args:
@@ -130,15 +132,15 @@ class ExecutionContext:
     total_tokens: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def increment_step(self):
+    def increment_step(self) -> None:
         """步骤计数器 +1"""
         self.current_step += 1
 
-    def add_tokens(self, tokens: int):
+    def add_tokens(self, tokens: int) -> None:
         """累加 token 数"""
         self.total_tokens += tokens
 
-    def set_metadata(self, key: str, value: Any):
+    def set_metadata(self, key: str, value: Any) -> None:
         """设置元数据"""
         self.metadata[key] = value
 

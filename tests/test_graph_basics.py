@@ -16,6 +16,7 @@ from clear_agent.core.graph import (
     START,
     CompiledGraph,
     GraphCompileError,
+    GraphError,
     GraphRecursionError,
     RunConfig,
     StateGraph,
@@ -346,6 +347,53 @@ def test_draw_mermaid_with_conditional():
 
     out = compiled.draw_mermaid()
     assert "-.x.->" in out or "-.y.->" in out
+
+
+def test_compile_rejects_multiple_static_edges_from_same_source():
+    """当前执行器只支持单后继；多条静态边必须显式拒绝。"""
+    g: StateGraph[SimpleState] = StateGraph(SimpleState)
+    g.add_node("a", lambda s: {})
+    g.add_node("b", lambda s: {})
+    g.add_node("c", lambda s: {})
+    g.add_edge(START, "a")
+    g.add_edge("a", "b")
+    g.add_edge("a", "c")
+    g.add_edge("b", END)
+    g.add_edge("c", END)
+
+    with pytest.raises(GraphCompileError, match="multiple outgoing"):
+        g.compile()
+
+
+def test_compile_rejects_conditional_mapping_fanout():
+    """mapping value 为 list 会被旧实现静默取第一个，必须拒绝。"""
+    g: StateGraph[SimpleState] = StateGraph(SimpleState)
+    g.add_node("a", lambda s: {})
+    g.add_node("b", lambda s: {})
+    g.add_node("c", lambda s: {})
+    g.add_edge(START, "a")
+    g.add_conditional_edges("a", lambda s: "both", {"both": ["b", "c"]})
+    g.add_edge("b", END)
+    g.add_edge("c", END)
+
+    with pytest.raises(GraphCompileError, match="fan-out"):
+        g.compile()
+
+
+def test_runtime_rejects_router_list_fanout():
+    """router 直接返回 list 时也不能静默丢分支。"""
+    g: StateGraph[SimpleState] = StateGraph(SimpleState)
+    g.add_node("a", lambda s: {"log": "a"})
+    g.add_node("b", lambda s: {"log": "b"})
+    g.add_node("c", lambda s: {"log": "c"})
+    g.add_edge(START, "a")
+    g.add_conditional_edges("a", lambda s: ["b", "c"])
+    g.add_edge("b", END)
+    g.add_edge("c", END)
+
+    compiled = g.compile()
+    with pytest.raises(GraphError, match="fan-out"):
+        compiled.invoke({"log": []})
 
 
 # ==================== Test 8: 错误传播 ====================

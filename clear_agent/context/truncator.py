@@ -9,6 +9,7 @@
 
 import os
 import json
+import re
 import time
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -106,7 +107,7 @@ class ObservationTruncator:
 
         # 需要截断
         truncated_lines = self._truncate_lines(lines)
-        preview = "\n".join(truncated_lines)
+        preview = self._truncate_bytes("\n".join(truncated_lines))
         truncated_bytes = len(preview.encode("utf-8"))
 
         # 保存完整输出
@@ -120,7 +121,7 @@ class ObservationTruncator:
                 "direction": self.truncate_direction,
                 "original_lines": len(lines),
                 "original_bytes": bytes_size,
-                "kept_lines": len(truncated_lines),
+                "kept_lines": len(preview.splitlines()),
                 "kept_bytes": truncated_bytes,
                 "time_ms": int((time.time() - start) * 1000),
             },
@@ -146,6 +147,24 @@ class ObservationTruncator:
             # 默认 head
             return lines[: self.max_lines]
 
+    def _truncate_bytes(self, text: str) -> str:
+        """Apply the max_bytes limit after line truncation."""
+        data = text.encode("utf-8")
+        if len(data) <= self.max_bytes:
+            return text
+        if self.max_bytes <= 0:
+            return ""
+
+        if self.truncate_direction == "tail":
+            trimmed = data[-self.max_bytes :]
+        elif self.truncate_direction == "head_tail" and self.max_bytes > 1:
+            head = self.max_bytes // 2
+            tail = self.max_bytes - head
+            trimmed = data[:head] + data[-tail:]
+        else:
+            trimmed = data[: self.max_bytes]
+        return trimmed.decode("utf-8", errors="ignore")
+
     def _save_full_output(
         self, tool_name: str, output: str, metadata: Optional[Dict[str, Any]] = None
     ) -> str:
@@ -160,7 +179,8 @@ class ObservationTruncator:
             保存的文件路径
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        filename = f"tool_{timestamp}_{tool_name}.json"
+        safe_tool_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", tool_name).strip("._")
+        filename = f"tool_{timestamp}_{safe_tool_name or 'tool'}.json"
         filepath = os.path.join(self.output_dir, filename)
 
         data = {

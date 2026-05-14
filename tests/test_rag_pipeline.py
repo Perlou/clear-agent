@@ -38,6 +38,7 @@ from clear_agent.retrieval.rag.pipeline import (
     build_graph_from_chunks,
     compress_ranked_items,
     compute_graph_signals_from_pool,
+    create_rag_pipeline,
     embed_query,
     expand_neighbors_from_pool,
     index_chunks,
@@ -364,10 +365,25 @@ def test_build_graph_swallows_neo4j_exceptions():
 class _FakeEmbedder:
     """简易 embedder：把文本长度作为单维向量"""
 
+    @property
+    def dimension(self):
+        return 384
+
     def encode(self, texts):
         if isinstance(texts, str):
             return [float(len(texts))] * 384
         return [[float(len(t))] * 384 for t in texts]
+
+
+class _SmallEmbedder:
+    @property
+    def dimension(self):
+        return 2
+
+    def encode(self, texts):
+        if isinstance(texts, str):
+            return [1.0, 2.0, 3.0]
+        return [[1.0, 2.0, 3.0] for _ in texts]
 
 
 def test_index_chunks_no_chunks_returns_early():
@@ -401,6 +417,18 @@ def test_index_chunks_calls_store_add_vectors():
     assert metas[0]["content"] == "hello world"
     # 原始 metadata 被合并
     assert metas[0]["doc_id"] == "d1"
+
+
+def test_index_chunks_uses_custom_embedder_dimension():
+    store = MagicMock()
+    store.add_vectors.return_value = True
+    chunks = [{"id": "c1", "content": "hello", "metadata": {}}]
+
+    with patch("clear_agent.retrieval.rag.pipeline.get_dimension", return_value=99):
+        index_chunks(store=store, chunks=chunks, embedder=_SmallEmbedder())
+
+    vectors = store.add_vectors.call_args.kwargs["vectors"]
+    assert vectors == [[1.0, 2.0]]
 
 
 def test_index_chunks_failure_raises():
@@ -437,11 +465,28 @@ def test_embed_query_with_fake_embedder():
     assert all(x == 5.0 for x in v)  # len('hello')=5
 
 
+def test_embed_query_uses_custom_embedder_dimension():
+    with patch("clear_agent.retrieval.rag.pipeline.get_dimension", return_value=99):
+        v = embed_query("hello", embedder=_SmallEmbedder())
+    assert v == [1.0, 2.0]
+
+
 def test_embed_query_failure_returns_zero():
     bad = MagicMock()
     bad.encode.side_effect = RuntimeError("x")
     v = embed_query("hello", embedder=bad)
     assert v == [0.0] * 384
+
+
+def test_create_rag_pipeline_uses_custom_embedder_dimension():
+    with patch(
+        "clear_agent.retrieval.rag.pipeline.QdrantVectorStore"
+    ) as store_cls:
+        store_cls.return_value = MagicMock()
+
+        create_rag_pipeline(collection_name="custom-dim", embedder=_SmallEmbedder())
+
+    assert store_cls.call_args.kwargs["vector_size"] == 2
 
 
 def test_search_vectors_empty_query():

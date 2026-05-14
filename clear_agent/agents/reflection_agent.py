@@ -1,6 +1,6 @@
 """Reflection Agent实现 - 自我反思与迭代优化的智能体"""
 
-from typing import Optional, List, Dict, Any, TYPE_CHECKING, AsyncGenerator
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, AsyncGenerator, cast
 import json
 from datetime import datetime
 
@@ -20,10 +20,10 @@ class Memory:
     简单的短期记忆模块，用于存储智能体的行动与反思轨迹。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.records: List[Dict[str, Any]] = []
 
-    def add_record(self, record_type: str, content: str):
+    def add_record(self, record_type: str, content: str) -> None:
         """向记忆中添加一条新记录"""
         self.records.append({"type": record_type, "content": content})
         print(f"📝 记忆已更新，新增一条 '{record_type}' 记录。")
@@ -42,7 +42,7 @@ class Memory:
         """获取最近一次的执行结果"""
         for record in reversed(self.records):
             if record["type"] == "execution":
-                return record["content"]
+                return str(record["content"])
         return ""
 
 
@@ -72,7 +72,7 @@ class ReflectionAgent(Agent):
         tool_registry: Optional["ToolRegistry"] = None,
         enable_tool_calling: bool = True,
         max_tool_iterations: int = 3,
-    ):
+    ) -> None:
         """
         初始化ReflectionAgent
 
@@ -107,7 +107,7 @@ class ReflectionAgent(Agent):
         self.enable_tool_calling = enable_tool_calling and tool_registry is not None
         self.max_tool_iterations = max_tool_iterations
 
-    def as_graph(self, checkpointer=None):
+    def as_graph(self, checkpointer: Any = None) -> Any:
         """返回等价的 Reflection StateGraph"""
         from ._reflection_graph import build_reflection_graph
 
@@ -115,7 +115,7 @@ class ReflectionAgent(Agent):
             llm=self.llm, config=self.config, checkpointer=checkpointer
         )
 
-    def run(self, input_text: str, **kwargs) -> str:
+    def run(self, input_text: str, **kwargs: Any) -> str:
         """
         运行Reflection Agent
 
@@ -167,18 +167,18 @@ class ReflectionAgent(Agent):
 
         return final_result
 
-    def _execute_task(self, task: str, **kwargs) -> str:
+    def _execute_task(self, task: str, **kwargs: Any) -> str:
         """执行初始任务"""
-        messages = [
-            {"role": "system", "content": self.system_prompt},
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self.system_prompt or ""},
             {"role": "user", "content": f"请完成以下任务：\n\n{task}"},
         ]
         return self._get_llm_response(messages, **kwargs)
 
-    def _reflect_on_result(self, task: str, result: str, **kwargs) -> str:
+    def _reflect_on_result(self, task: str, result: str, **kwargs: Any) -> str:
         """对结果进行反思"""
-        messages = [
-            {"role": "system", "content": self.system_prompt},
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self.system_prompt or ""},
             {
                 "role": "user",
                 "content": f"""请仔细审查以下回答，并找出可能的问题或改进空间：
@@ -196,11 +196,11 @@ class ReflectionAgent(Agent):
         return self._get_llm_response(messages, **kwargs)
 
     def _refine_result(
-        self, task: str, last_attempt: str, feedback: str, **kwargs
+        self, task: str, last_attempt: str, feedback: str, **kwargs: Any
     ) -> str:
         """根据反馈优化结果"""
-        messages = [
-            {"role": "system", "content": self.system_prompt},
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self.system_prompt or ""},
             {
                 "role": "user",
                 "content": f"""请根据反馈意见改进你的回答：
@@ -219,7 +219,39 @@ class ReflectionAgent(Agent):
         ]
         return self._get_llm_response(messages, **kwargs)
 
-    def _get_llm_response(self, messages: List[Dict[str, str]], **kwargs) -> str:
+    def _build_reflection_prompt(self, task: str, result: str) -> str:
+        """构建流式反思阶段提示。"""
+        return f"""请仔细审查以下回答，并找出可能的问题或改进空间：
+
+# 原始任务:
+{task}
+
+# 当前回答:
+{result}
+
+请分析这个回答的质量，指出不足之处，并提出具体的改进建议。
+如果回答已经很好，请回答"无需改进"。"""
+
+    def _build_refinement_prompt(
+        self, task: str, current_response: str, reflection: str
+    ) -> str:
+        """构建流式优化阶段提示。"""
+        return f"""请根据反馈意见改进你的回答：
+
+# 原始任务:
+{task}
+
+# 当前回答:
+{current_response}
+
+# 反馈意见:
+{reflection}
+
+请提供一个改进后的回答。"""
+
+    def _get_llm_response(
+        self, messages: List[Dict[str, Any]], **kwargs: Any
+    ) -> str:
         """
         调用LLM并获取完整响应（支持 Function Calling）
 
@@ -319,7 +351,7 @@ class ReflectionAgent(Agent):
         on_start: LifecycleHook = None,
         on_finish: LifecycleHook = None,
         on_error: LifecycleHook = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """
         ReflectionAgent 真正的流式执行
@@ -353,7 +385,7 @@ class ReflectionAgent(Agent):
                 description="生成初始回答",
             )
 
-            messages = []
+            messages: List[Dict[str, str]] = []
             if self.system_prompt:
                 messages.append({"role": "system", "content": self.system_prompt})
 
@@ -393,7 +425,9 @@ class ReflectionAgent(Agent):
                 reflection_prompt = self._build_reflection_prompt(
                     input_text, current_response
                 )
-                reflection_messages = [{"role": "user", "content": reflection_prompt}]
+                reflection_messages: List[Dict[str, str]] = [
+                    {"role": "user", "content": reflection_prompt}
+                ]
 
                 reflection = ""
                 async for chunk in self.llm.astream_invoke(
@@ -428,7 +462,9 @@ class ReflectionAgent(Agent):
                 refinement_prompt = self._build_refinement_prompt(
                     input_text, current_response, reflection
                 )
-                refinement_messages = [{"role": "user", "content": refinement_prompt}]
+                refinement_messages: List[Dict[str, str]] = [
+                    {"role": "user", "content": refinement_prompt}
+                ]
 
                 refined_response = ""
                 async for chunk in self.llm.astream_invoke(

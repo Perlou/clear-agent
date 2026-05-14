@@ -11,7 +11,16 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Dict, List, Optional, TYPE_CHECKING, TypedDict
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TYPE_CHECKING,
+    TypedDict,
+)
 
 from ..core.checkpoint import BaseCheckpointer
 from ..core.config import Config
@@ -54,9 +63,12 @@ def _build_user_tool_schemas(registry: Optional["ToolRegistry"]) -> List[Dict[st
     return schemas
 
 
-def _make_llm_node(llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]):
+def _make_llm_node(
+    llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]
+) -> Callable[[SimpleGraphState], Dict[str, Any]]:
     def llm_node(state: SimpleGraphState) -> Dict[str, Any]:
         messages = list(state.get("messages") or [])
+        response: Any
 
         if tool_schemas:
             response = llm.invoke_with_tools(
@@ -70,16 +82,19 @@ def _make_llm_node(llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]):
             tool_calls = []
             content = response.content
 
-        assistant_msg: Dict[str, Any] = {"role": "assistant", "content": content}
-        if tool_calls:
-            assistant_msg["tool_calls"] = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.name, "arguments": tc.arguments},
-                }
-                for tc in tool_calls
-            ]
+        if tool_schemas and hasattr(llm, "serialize_assistant_message"):
+            assistant_msg = llm.serialize_assistant_message(response)
+        else:
+            assistant_msg = {"role": "assistant", "content": content}
+            if tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": tc.arguments},
+                    }
+                    for tc in tool_calls
+                ]
 
         delta_tokens = (response.usage or {}).get("total_tokens", 0) or 0
 
@@ -96,7 +111,9 @@ def _make_llm_node(llm: "ClearAgentLLM", tool_schemas: List[Dict[str, Any]]):
     return llm_node
 
 
-def _make_tool_executor_node(registry: Optional["ToolRegistry"]):
+def _make_tool_executor_node(
+    registry: Optional["ToolRegistry"],
+) -> Callable[[SimpleGraphState], Dict[str, Any]]:
     def tool_executor_node(state: SimpleGraphState) -> Dict[str, Any]:
         tool_calls = state.get("tool_calls_pending") or []
         new_messages: List[Dict[str, Any]] = []

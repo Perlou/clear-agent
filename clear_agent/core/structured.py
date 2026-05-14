@@ -26,6 +26,8 @@ from typing import (
     TYPE_CHECKING,
     TypeVar,
     Union,
+    Generic,
+    cast,
 )
 
 try:
@@ -89,7 +91,7 @@ def _is_function_calling_unsupported(model: str, base_url: Optional[str]) -> boo
     return False
 
 
-def _auto_method(model: str, base_url: Optional[str]) -> str:
+def _auto_method(model: str, base_url: Optional[str]) -> Method:
     """根据 model + base_url 选最合适的 method
 
     规则：
@@ -151,7 +153,7 @@ def _extract_first_json_object(text: str) -> Optional[str]:
 
 # ==================== 核心 StructuredLLM ====================
 
-class StructuredLLM:
+class StructuredLLM(Generic[T]):
     """让 ``ClearAgentLLM`` 输出符合给定 ``BaseModel`` 的实例
 
     一般通过 ``llm.with_structured_output(schema)`` 创建，不直接构造。
@@ -171,7 +173,7 @@ class StructuredLLM:
             raise ClearAgentException(f"不支持的 structured output method: {method}")
         self.llm = llm
         self.schema = schema
-        self.method: str = method
+        self.method: Method = method
         self.include_raw = include_raw
         self.max_retries = max_retries
 
@@ -277,22 +279,22 @@ class StructuredLLM:
         # json_mode / json_schema 也是 JSON 字符串；偶尔模型加了 fence
         text = _strip_json_fence(text)
         try:
-            return self.schema.model_validate_json(text)
+            return cast(T, self.schema.model_validate_json(text))
         except (ValidationError, ValueError, json.JSONDecodeError):
             pass
         # 兜底：先抽对象再 parse
         candidate = _extract_first_json_object(text)
         if candidate is not None:
-            return self.schema.model_validate_json(candidate)
+            return cast(T, self.schema.model_validate_json(candidate))
         # 抛原始错误以便重试 prompt
-        return self.schema.model_validate_json(text)  # 触发原始异常上抛
+        return cast(T, self.schema.model_validate_json(text))  # 触发原始异常上抛
 
     # ---------- 公共入口（同步） ----------
 
     def invoke(
         self, messages: List[Dict[str, Any]], **kwargs: Any
     ) -> Union[T, Dict[str, Any]]:
-        return self._loop(messages, async_mode=False, **kwargs)  # type: ignore[return-value]
+        return cast(Union[T, Dict[str, Any]], self._loop(messages, **kwargs))
 
     # ---------- 公共入口（异步） ----------
 
@@ -300,13 +302,11 @@ class StructuredLLM:
         self, messages: List[Dict[str, Any]], **kwargs: Any
     ) -> Union[T, Dict[str, Any]]:
         # 借同步 _loop 的逻辑——LLM 调用走 ainvoke / ainvoke_with_tools
-        return await self._aloop(messages, **kwargs)  # type: ignore[return-value]
+        return cast(Union[T, Dict[str, Any]], await self._aloop(messages, **kwargs))
 
     # ---------- 同步主循环 ----------
 
-    def _loop(
-        self, messages: List[Dict[str, Any]], async_mode: bool, **kwargs: Any
-    ) -> Any:
+    def _loop(self, messages: List[Dict[str, Any]], **kwargs: Any) -> Any:
         cur_messages = list(messages)
         last_err: Optional[Exception] = None
         last_raw: Optional[Union[LLMResponse, LLMToolResponse]] = None
@@ -325,7 +325,7 @@ class StructuredLLM:
 
                 last_text = text
                 last_raw = raw
-                parsed = self._parse(text)
+                parsed: T = self._parse(text)
                 if self.include_raw:
                     return {"parsed": parsed, "raw": raw, "parsing_error": None}
                 return parsed
@@ -384,13 +384,14 @@ class StructuredLLM:
                             "type": "function",
                             "function": {"name": self.schema.__name__},
                         }
-                    raw = await self.llm.ainvoke_with_tools(
+                    tool_raw = await self.llm.ainvoke_with_tools(
                         fc_messages, [fn], tool_choice=tool_choice, **kwargs
                     )
+                    raw: Union[LLMToolResponse, LLMResponse] = tool_raw
                     text = (
-                        raw.tool_calls[0].arguments
-                        if raw.tool_calls
-                        else (raw.content or "")
+                        tool_raw.tool_calls[0].arguments
+                        if tool_raw.tool_calls
+                        else (tool_raw.content or "")
                     )
                 elif self.method == "json_mode":
                     schema_hint = (
@@ -427,7 +428,7 @@ class StructuredLLM:
 
                 last_text = text
                 last_raw = raw
-                parsed = self._parse(text)
+                parsed: T = self._parse(text)
                 if self.include_raw:
                     return {"parsed": parsed, "raw": raw, "parsing_error": None}
                 return parsed

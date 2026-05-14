@@ -236,6 +236,22 @@ class TestObservationTruncator:
         assert len(preview_lines) == 10
         assert preview_lines[0] == "Line 1"
 
+    def test_truncation_enforces_byte_limit_for_long_single_line(self):
+        """单行超长输出也必须受 max_bytes 限制。"""
+        truncator = ObservationTruncator(
+            max_lines=10,
+            max_bytes=12,
+            truncate_direction="head",
+            output_dir=self.test_output_dir,
+        )
+        output = "abcdefghijklmnopqrstuvwxyz"
+
+        result = truncator.truncate("test_tool", output)
+
+        assert result["truncated"] is True
+        assert len(result["preview"].encode("utf-8")) <= 12
+        assert result["stats"]["kept_bytes"] <= 12
+
     def test_truncation_direction_tail(self):
         """测试 tail 方向截断"""
         truncator = ObservationTruncator(

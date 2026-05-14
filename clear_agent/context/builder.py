@@ -27,7 +27,7 @@ class ContextPacket:
     token_count: int = 0
     relevance_score: float = 0.0  # 0.0-1.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """自动计算token数"""
         if self.token_count == 0:
             self.token_count = count_tokens(self.content)
@@ -69,7 +69,7 @@ class ContextBuilder:
     ```
     """
 
-    def __init__(self, config: Optional[ContextConfig] = None):
+    def __init__(self, config: Optional[ContextConfig] = None) -> None:
         self.config = config or ContextConfig()
         self._encoding = tiktoken.get_encoding("cl100k_base")
 

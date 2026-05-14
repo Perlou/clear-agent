@@ -86,6 +86,37 @@ def test_fallback_all_fail_raises_retrieval_exception():
                     create_embedding_model_with_fallback("dashscope")
 
 
+def test_fallback_filters_kwargs_for_local_backend():
+    """Fallback 到 local 时不应把 api_key/base_url 传给 local 构造器。"""
+    with patch.object(DashScopeEmbedding, "__init__", side_effect=ImportError("dash")):
+        with patch.object(LocalTransformerEmbedding, "_load_backend", lambda self: None):
+            e = create_embedding_model_with_fallback(
+                "dashscope",
+                model_name="local-model",
+                api_key="sk-x",
+                base_url="https://embed.example/v1",
+            )
+    assert isinstance(e, LocalTransformerEmbedding)
+    assert e.model_name == "local-model"
+
+
+def test_fallback_filters_kwargs_for_tfidf_backend():
+    """Fallback 到 tfidf 时只应传 max_features 这类 TF-IDF 参数。"""
+    with patch.object(DashScopeEmbedding, "__init__", side_effect=ImportError("dash")):
+        with patch.object(
+            LocalTransformerEmbedding, "__init__", side_effect=ImportError("local")
+        ):
+            e = create_embedding_model_with_fallback(
+                "dashscope",
+                model_name="ignored",
+                api_key="sk-x",
+                base_url="https://embed.example/v1",
+                max_features=12,
+            )
+    assert isinstance(e, TFIDFEmbedding)
+    assert e.max_features == 12
+
+
 # ==================== Section B: 单例 / Provider ====================
 
 

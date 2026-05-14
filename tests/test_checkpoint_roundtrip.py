@@ -285,6 +285,66 @@ def test_atomic_write_no_partial_file(tmp_dir):
     assert ck.get_tuple("t1").id == c1.id
 
 
+def test_json_checkpointer_keeps_unsafe_thread_id_under_base_dir(tmp_dir):
+    """thread_id 是外部输入，即使包含路径片段也不能逃出 base_dir。"""
+    base = tmp_dir / "ckpts"
+    escaped_dir = tmp_dir / "escaped-thread"
+    ck = JsonFileCheckpointer(base_dir=str(base), legacy_session_dir=None)
+
+    ckpt = Checkpoint(
+        id="safe-id",
+        thread_id="../escaped-thread",
+        parent_id=None,
+        state={"x": 1},
+        next_nodes=[],
+        created_at=datetime.now(),
+        metadata={},
+    )
+
+    ck.put(ckpt)
+
+    assert not escaped_dir.exists()
+    loaded = ck.get_tuple("../escaped-thread", "safe-id")
+    assert loaded is not None
+    assert loaded.state == {"x": 1}
+
+
+def test_json_checkpointer_rejects_checkpoint_id_path_traversal(tmp_dir):
+    """checkpoint_id 不能读取 thread 目录外的 JSON 文件。"""
+    base = tmp_dir / "ckpts"
+    ck = JsonFileCheckpointer(base_dir=str(base), legacy_session_dir=None)
+
+    ck.put(
+        Checkpoint(
+            id="safe-id",
+            thread_id="safe-thread",
+            parent_id=None,
+            state={"safe": True},
+            next_nodes=[],
+            created_at=datetime.now(),
+            metadata={},
+        )
+    )
+    outside = tmp_dir / "evil.json"
+    outside.write_text(
+        json.dumps(
+            Checkpoint(
+                id="evil",
+                thread_id="evil-thread",
+                parent_id=None,
+                state={"escaped": True},
+                next_nodes=[],
+                created_at=datetime.now(),
+                metadata={},
+            ).to_dict(),
+            default=str,
+        ),
+        encoding="utf-8",
+    )
+
+    assert ck.get_tuple("safe-thread", "../../evil") is None
+
+
 # ==================== Test 8: 异步并发 ====================
 
 

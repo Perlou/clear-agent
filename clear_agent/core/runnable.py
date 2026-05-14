@@ -30,7 +30,18 @@ from __future__ import annotations
 import asyncio
 import inspect
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    cast,
+)
 
 
 # ==================== Runnable 抽象 ====================
@@ -100,13 +111,13 @@ class RunnableLambda(Runnable):
         result = self.func(input)
         if inspect.isawaitable(result):
             # async 函数被同步入口调用 → 用 asyncio.run
-            return asyncio.run(result)
+            return asyncio.run(cast(Coroutine[Any, Any, Any], result))
         return result
 
     async def ainvoke(self, input: Any, **kwargs: Any) -> Any:
         result = self.func(input)
         if inspect.isawaitable(result):
-            return await result
+            return await cast(Awaitable[Any], result)
         return result
 
     def __repr__(self) -> str:

@@ -32,7 +32,7 @@ class StreamEvent:
 
     @classmethod
     def create(
-        cls, event_type: StreamEventType, agent_name: str, **data
+        cls, event_type: StreamEventType, agent_name: str, **data: Any
     ) -> "StreamEvent":
         """创建事件"""
         return cls(
@@ -81,11 +81,11 @@ class StreamBuffer:
     - 事件过滤
     """
 
-    def __init__(self, max_buffer_size: int = 100):
+    def __init__(self, max_buffer_size: int = 100) -> None:
         self.max_buffer_size = max_buffer_size
         self.events: list[StreamEvent] = []
 
-    def add(self, event: StreamEvent):
+    def add(self, event: StreamEvent) -> None:
         """添加事件到缓冲区"""
         self.events.append(event)
 
@@ -97,7 +97,7 @@ class StreamBuffer:
         """获取所有事件"""
         return self.events.copy()
 
-    def clear(self):
+    def clear(self) -> None:
         """清空缓冲区"""
         self.events.clear()
 

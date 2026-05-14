@@ -1,7 +1,7 @@
 """配置管理"""
 
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast
 from pydantic import BaseModel
 
 
@@ -123,15 +123,14 @@ class Config(BaseModel):
     @classmethod
     def from_env(cls) -> "Config":
         """从环境变量创建配置"""
+        max_tokens = os.getenv("MAX_TOKENS")
         return cls(
             debug=os.getenv("DEBUG", "false").lower() == "true",
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             temperature=float(os.getenv("TEMPERATURE", "0.7")),
-            max_tokens=int(os.getenv("MAX_TOKENS"))
-            if os.getenv("MAX_TOKENS")
-            else None,
+            max_tokens=int(max_tokens) if max_tokens else None,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        return self.dict()
+        return cast(Dict[str, Any], self.model_dump())

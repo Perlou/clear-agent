@@ -125,7 +125,7 @@ compiled.resume("t1", value="yes_to_second")
 - 节点函数应是**幂等的**（resume 时会从头重新执行该节点，不是从 `interrupt()` 处继续）
 - `payload` 必须是 JSON 可序列化（dict / list / 基本类型）
 - `GraphInterrupt` 继承 `BaseException` 而非 `Exception`，避免被节点的 `try/except Exception` 误吞
-- `Config.hitl_interrupt_ttl_seconds` 可设置 ckpt 过期时间（默认 0 = 不过期）；超时后 `resume` 抛 `InterruptExpiredError`
+- `Config.hitl_interrupt_ttl_seconds` 可设置 ckpt 过期时间（默认 86400 秒，即 24 小时；设为 `0` 表示不过期）；超时后 `resume` / `aresume` 抛 `InterruptExpiredError`
 
 ## 排错
 
